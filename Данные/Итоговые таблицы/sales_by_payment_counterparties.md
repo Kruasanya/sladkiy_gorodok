@@ -4,6 +4,7 @@
 
 - `sales_by_payment_counterparties.csv`
 - `sales_by_payment_counterparties.xlsx`
+- `sales_by_payment_counterparties.parquet`
 
 Источник: Excel-отчеты из папки `Данные/Продажи по контрагентам (по оплате)`.
 
@@ -30,12 +31,6 @@
 
 | Поле | Тип | Описание |
 |---|---|---|
-| `source_file` | string | Имя исходного Excel-файла. |
-| `source_file_path` | string | Относительный путь к исходному файлу внутри проекта. |
-| `source_file_hash` | string | SHA-256 хэш исходного файла. Используется для инкрементальной обработки. |
-| `source_sheet` | string | Имя листа-источника. Для этих отчетов обычно `Лист_1`. |
-| `source_row_number` | integer | Номер строки документа в исходном Excel, начиная с 1. |
-| `source_column` | string | Название колонки Excel, где была найдена сумма, например `10.04.26`. |
 | `period_label` | string | Период из имени файла. |
 | `period_start` | date | Начало периода, извлеченное из имени файла. |
 | `period_end` | date | Конец периода, извлеченный из имени файла. |
@@ -51,8 +46,12 @@
 | `payment_doc_number` | string | Номер документа поступления. |
 | `payment_date` | date | Итоговая дата платежа для аналитики. |
 | `amount` | float | Сумма платежа. |
-| `counterparty_period_total` | float | Итог по контрагенту в рамках исходного отчета. |
-| `report_total` | float | Общий итог исходного отчета. |
+| `source_file` | string | Имя исходного Excel-файла. |
+| `source_file_path` | string | Относительный путь к исходному файлу внутри проекта. |
+| `source_file_hash` | string | SHA-256 хэш исходного файла. Используется для инкрементальной обработки. |
+| `source_sheet` | string | Имя листа-источника. Для этих отчетов обычно `Лист_1`. |
+| `source_row_number` | integer | Номер строки документа в исходном Excel, начиная с 1. |
+| `source_column` | string | Название колонки Excel, где была найдена сумма, например `10.04.26`. |
 
 ## Пример строк
 

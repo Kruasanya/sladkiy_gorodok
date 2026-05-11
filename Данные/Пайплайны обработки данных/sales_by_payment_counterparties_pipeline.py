@@ -30,12 +30,17 @@ class PipelineConfig:
     def xlsx_path(self) -> Path:
         return self.output_dir / f"{self.dataset_basename}.xlsx"
 
+    @property
+    def parquet_path(self) -> Path:
+        return self.output_dir / f"{self.dataset_basename}.parquet"
+
 
 class DependencyChecker:
     REQUIRED_IMPORTS = {
         "pandas": "pandas",
         "xlrd": "xlrd",
         "openpyxl": "openpyxl",
+        "pyarrow": "pyarrow",
     }
 
     @classmethod
@@ -243,8 +248,6 @@ class SalesByPaymentReportParser:
             and pd.notna(parsed_date)
         }
 
-        total_rows = raw[raw[0].astype(str).str.strip().eq("Итого")]
-        report_total = float(total_rows.iloc[0, 1]) if len(total_rows) else None
         period_info = PeriodParser.parse_from_filename(path.name)
         source_file_path = path.resolve().relative_to(self.project_root.resolve()).as_posix()
 
@@ -256,7 +259,6 @@ class SalesByPaymentReportParser:
                 break
 
             counterparty_raw = first_cell
-            counterparty_period_total = float(raw.iat[i, 1]) if pd.notna(raw.iat[i, 1]) else None
             counterparty = TextParser.parse_counterparty(counterparty_raw)
 
             j = i + 1
@@ -292,12 +294,6 @@ class SalesByPaymentReportParser:
 
                         rows.append(
                             {
-                                "source_file": path.name,
-                                "source_file_path": source_file_path,
-                                "source_file_hash": source_file_hash,
-                                "source_sheet": "Лист_1",
-                                "source_row_number": j + 1,
-                                "source_column": headers[col_idx],
                                 **period_info,
                                 "counterparty_raw": counterparty_raw,
                                 **counterparty,
@@ -307,8 +303,12 @@ class SalesByPaymentReportParser:
                                 "payment_doc_number": payment_doc["payment_doc_number"],
                                 "payment_date": payment_date,
                                 "amount": float(amount),
-                                "counterparty_period_total": counterparty_period_total,
-                                "report_total": report_total,
+                                "source_file": path.name,
+                                "source_file_path": source_file_path,
+                                "source_file_hash": source_file_hash,
+                                "source_sheet": "Лист_1",
+                                "source_row_number": j + 1,
+                                "source_column": headers[col_idx],
                             }
                         )
 
@@ -324,12 +324,6 @@ class SalesByPaymentReportParser:
             return df
 
         columns = [
-            "source_file",
-            "source_file_path",
-            "source_file_hash",
-            "source_sheet",
-            "source_row_number",
-            "source_column",
             "period_label",
             "period_start",
             "period_end",
@@ -345,8 +339,12 @@ class SalesByPaymentReportParser:
             "payment_doc_number",
             "payment_date",
             "amount",
-            "counterparty_period_total",
-            "report_total",
+            "source_file",
+            "source_file_path",
+            "source_file_hash",
+            "source_sheet",
+            "source_row_number",
+            "source_column",
         ]
         return df[columns]
 
@@ -370,6 +368,7 @@ class DatasetStore:
         df = self._sort(df)
         df.to_csv(self.config.csv_path, index=False, encoding="utf-8-sig")
         df.to_excel(self.config.xlsx_path, index=False)
+        df.to_parquet(self.config.parquet_path, index=False)
 
     @staticmethod
     def _sort(df: pd.DataFrame) -> pd.DataFrame:
@@ -436,6 +435,7 @@ class SalesByPaymentPipeline:
             "amount_total": float(result["amount"].sum()) if not result.empty else 0.0,
             "csv_path": str(self.config.csv_path),
             "xlsx_path": str(self.config.xlsx_path),
+            "parquet_path": str(self.config.parquet_path),
         }
 
 
@@ -487,6 +487,7 @@ def main(argv: Iterable[str] | None = None) -> None:
     print(f"Сумма amount: {summary['amount_total']:,.2f}")
     print(f"CSV: {summary['csv_path']}")
     print(f"Excel: {summary['xlsx_path']}")
+    print(f"Parquet: {summary['parquet_path']}")
 
     if summary["processed_files"]:
         print("\nОбработанные файлы:")

@@ -1,97 +1,43 @@
-# Пайплайн `sales_by_payment_counterparties`
+# Пайплайны обработки данных
 
-Этот пайплайн собирает все Excel-файлы из папки:
-
-`Данные/Продажи по контрагентам (по оплате)`
-
-и превращает их в единую аналитическую таблицу:
-
-- `Данные/Итоговые таблицы/sales_by_payment_counterparties.csv`
-- `Данные/Итоговые таблицы/sales_by_payment_counterparties.xlsx`
-
-Итоговая таблица построена в длинном формате: одна строка = один платежный документ / одно поступление на расчетный счет.
-
-## Как устроена инкрементальная обработка
-
-При каждом запуске код:
-
-1. Находит все `.xls` файлы в папке источника.
-2. Считает SHA-256 хэш каждого файла.
-3. Открывает уже существующий итоговый CSV, если он есть.
-4. Проверяет, какие файлы уже были обработаны по колонке `source_file_hash`.
-5. Новые файлы парсит и добавляет в итоговую таблицу.
-6. Если файл с тем же путем изменился, старые строки этого файла удаляются и файл парсится заново.
-7. Перезаписывает итоговые CSV и Excel.
-
-Это значит, что при появлении новых файлов достаточно положить их в исходную папку и запустить пайплайн еще раз.
+В этой папке лежат скрипты, которые превращают исходные Excel-отчеты из папки `Данные` в аналитические таблицы.
 
 ## Установка зависимостей
-
-Один раз установи зависимости:
 
 ```bash
 python3 -m pip install -r "Данные/Пайплайны обработки данных/requirements.txt"
 ```
 
-Если ты работаешь в виртуальном окружении, сначала активируй его, затем выполни команду выше.
+## Пайплайны
+
+| Пайплайн | Что обрабатывает | Код | Итоговые данные | Описание таблицы |
+|---|---|---|---|---|
+| `sales_by_counterparties` | Продажи по контрагентам | [sales_by_counterparties_pipeline.py](sales_by_counterparties_pipeline.py) | [Parquet](../Итоговые%20таблицы/sales_by_counterparties.parquet), [CSV](../Итоговые%20таблицы/sales_by_counterparties.csv), [XLSX](../Итоговые%20таблицы/sales_by_counterparties.xlsx) | [sales_by_counterparties.md](../Итоговые%20таблицы/sales_by_counterparties.md) |
+| `sales_by_payment_counterparties` | Продажи по контрагентам по оплате | [sales_by_payment_counterparties_pipeline.py](sales_by_payment_counterparties_pipeline.py) | [Parquet](../Итоговые%20таблицы/sales_by_payment_counterparties.parquet), [CSV](../Итоговые%20таблицы/sales_by_payment_counterparties.csv), [XLSX](../Итоговые%20таблицы/sales_by_payment_counterparties.xlsx) | [sales_by_payment_counterparties.md](../Итоговые%20таблицы/sales_by_payment_counterparties.md) |
+| `bank_statement_transactions` | Банковские выписки | [bank_statement_transactions_pipeline.py](bank_statement_transactions_pipeline.py) | [Parquet](../Итоговые%20таблицы/bank_statement_transactions.parquet), [CSV](../Итоговые%20таблицы/bank_statement_transactions.csv), [XLSX](../Итоговые%20таблицы/bank_statement_transactions.xlsx) | [bank_statement_transactions.md](../Итоговые%20таблицы/bank_statement_transactions.md) |
 
 ## Запуск
 
-Из корня проекта:
+Обычный запуск обновляет итоговую таблицу только новыми или измененными файлами:
 
 ```bash
+python3 "Данные/Пайплайны обработки данных/sales_by_counterparties_pipeline.py"
 python3 "Данные/Пайплайны обработки данных/sales_by_payment_counterparties_pipeline.py"
+python3 "Данные/Пайплайны обработки данных/bank_statement_transactions_pipeline.py"
 ```
 
-Если нужно полностью пересобрать итоговую таблицу из всех исходных файлов:
+Полная пересборка:
 
 ```bash
+python3 "Данные/Пайплайны обработки данных/sales_by_counterparties_pipeline.py" --rebuild
 python3 "Данные/Пайплайны обработки данных/sales_by_payment_counterparties_pipeline.py" --rebuild
+python3 "Данные/Пайплайны обработки данных/bank_statement_transactions_pipeline.py" --rebuild
 ```
 
-По умолчанию скрипт использует:
+Подробное описание алгоритмов всех пайплайнов: [PIPELINES.md](PIPELINES.md).
 
-- исходники: `Данные/Продажи по контрагентам (по оплате)`
-- результаты: `Данные/Итоговые таблицы`
+## Описание итоговых таблиц
 
-Можно передать свои пути:
-
-```bash
-python3 "Данные/Пайплайны обработки данных/sales_by_payment_counterparties_pipeline.py" \
-  --source-dir "Данные/Продажи по контрагентам (по оплате)" \
-  --output-dir "Данные/Итоговые таблицы"
-```
-
-## Как добавлять новые данные
-
-1. Положи новый `.xls` отчет в `Данные/Продажи по контрагентам (по оплате)`.
-2. Запусти команду из раздела "Запуск".
-3. Скрипт сам определит, что файл новый, распарсит его и добавит строки в итоговые таблицы.
-
-Если файл был заменен новой версией под тем же именем, скрипт увидит новый хэш, удалит старые строки этого файла и добавит актуальные.
-
-## Правило выбора даты платежа
-
-В Excel-отчете дата платежа одновременно видна в колонке и в тексте документа `Поступление на расчетный счет № ... от ...`.
-
-Логика пайплайна:
-
-- сначала берется дата из колонки Excel;
-- внутри парсера дата сверяется с датой из текста документа;
-- если дата документа распарсилась и отличается от даты колонки, в итоговую `payment_date` записывается дата документа;
-- если дату документа распарсить не удалось, остается дата из колонки Excel.
-
-Служебные даты наружу не выводятся: в итоговой таблице остается только `payment_date`.
-
-## Структура кода
-
-Основные классы:
-
-- `PipelineConfig` - настройки путей и имен файлов.
-- `DependencyChecker` - проверка зависимостей Python.
-- `FileRegistry` - поиск исходных файлов, относительные пути, хэши.
-- `TextParser` - разбор текстовых полей: контрагент, договор, документ.
-- `PeriodParser` - извлечение периода из имени файла.
-- `SalesByPaymentReportParser` - парсинг одного Excel-отчета.
-- `DatasetStore` - чтение и запись итоговых CSV/XLSX.
-- `SalesByPaymentPipeline` - orchestration: поиск новых файлов, парсинг, обновление итоговой таблицы.
+- [sales_by_counterparties.md](../Итоговые%20таблицы/sales_by_counterparties.md) - описание таблицы продаж по контрагентам.
+- [sales_by_payment_counterparties.md](../Итоговые%20таблицы/sales_by_payment_counterparties.md) - описание таблицы оплат по контрагентам.
+- [bank_statement_transactions.md](../Итоговые%20таблицы/bank_statement_transactions.md) - описание таблицы банковских операций.
