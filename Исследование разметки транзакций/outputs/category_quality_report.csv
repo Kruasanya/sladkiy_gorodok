@@ -1,0 +1,10 @@
+metric,value
+operations_total,4190.0
+auto_classified_count,3902.0
+needs_review_count,288.0
+needs_review_share,0.06873508353221958
+unknown_count,105.0
+unknown_share_by_count,0.025059665871121718
+unknown_share_by_amount,0.04697468109318984
+llm_classified_count,0.0
+rule_llm_disagreements,0.0
