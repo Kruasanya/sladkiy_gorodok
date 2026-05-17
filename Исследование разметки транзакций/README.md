@@ -39,3 +39,10 @@
 2. Заполните `category_manual`, `subcategory_manual`, при необходимости `comment_manual`.
 3. Сохраните копию как `outputs/manual_validation_500_labeled.xlsx`.
 4. Перезапустите блок оценки качества в notebook.
+
+## Последнее улучшение качества
+
+- Unknown снижен до `1` операции на `5 793.30` руб. — это около `0.01%` оборота.
+- Добавлены контрагентные и текстовые правила для меланжа/яичного сырья, подрядчиков, подотчёта, вывозов, сервисов, печатных форм и производственных расходников.
+- Добавлена углублённая аналитика: концентрация расходов/клиентов/поставщиков, повторяющиеся платежи, cash pressure по месяцам, heatmap расходов, подсветка назначений платежа.
+- Новые outputs: `analytics_insights.csv/.md`, `expense_concentration.csv`, `counterparty_cash_impact.csv`, `recurring_payments.csv`, `cash_pressure_by_month.csv`, `highlighted_operations_for_review.csv`.
