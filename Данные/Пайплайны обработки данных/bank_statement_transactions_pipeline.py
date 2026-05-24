@@ -12,6 +12,23 @@ import pandas as pd
 
 
 DATASET_BASENAME = "bank_statement_transactions"
+BUSINESS_KEY_COLUMNS = [
+    "operation_date",
+    "document_number",
+    "debit",
+    "credit",
+    "amount",
+    "direction",
+    "counterparty_name",
+    "counterparty_inn",
+    "counterparty_kpp",
+    "counterparty_account",
+    "counterparty_bik",
+    "counterparty_bank_name",
+    "payment_purpose",
+    "debtor_code",
+    "document_type",
+]
 STRING_COLUMNS = [
     "source_file",
     "source_file_path",
@@ -302,6 +319,15 @@ class DatasetStore:
             kind="stable",
         ).reset_index(drop=True)
 
+    @staticmethod
+    def drop_business_duplicates(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        if df.empty:
+            return df, 0
+
+        before = len(df)
+        deduplicated = df.drop_duplicates(subset=BUSINESS_KEY_COLUMNS, keep="first").copy()
+        return deduplicated.reset_index(drop=True), before - len(deduplicated)
+
 
 class BankStatementPipeline:
     def __init__(self, config: PipelineConfig) -> None:
@@ -341,6 +367,7 @@ class BankStatementPipeline:
 
         frames = [frame for frame in [working_existing, *parsed_frames] if not frame.empty]
         result = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        result, business_duplicates_dropped = self.store.drop_business_duplicates(result)
 
         self.store.save(result)
 
@@ -351,6 +378,7 @@ class BankStatementPipeline:
             "processed_files": processed_files,
             "skipped_files": skipped_files,
             "validations": validations,
+            "business_duplicates_dropped": business_duplicates_dropped,
             "rows_total": len(result),
             "debit_total": float(result["debit"].sum()) if not result.empty else 0.0,
             "credit_total": float(result["credit"].sum()) if not result.empty else 0.0,
@@ -402,6 +430,7 @@ def main(argv: Iterable[str] | None = None) -> None:
     print(f"Найдено исходных файлов: {summary['source_files_found']}")
     print(f"Обработано новых/измененных файлов: {summary['processed_files_count']}")
     print(f"Пропущено уже обработанных файлов: {summary['skipped_files_count']}")
+    print(f"Удалено бизнес-дублей: {summary['business_duplicates_dropped']}")
     print(f"Строк в итоговой таблице: {summary['rows_total']}")
     print(f"Сумма debit: {summary['debit_total']:,.2f}")
     print(f"Сумма credit: {summary['credit_total']:,.2f}")
