@@ -366,6 +366,26 @@ class DatasetStore:
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
 
         df = self._sort(df)
+        text_columns = [
+            "period_label",
+            "counterparty_raw",
+            "legal_entity",
+            "brand",
+            "store_location_raw",
+            "city_or_area",
+            "contract_raw",
+            "contract_number",
+            "payment_doc_raw",
+            "payment_doc_number",
+            "source_file",
+            "source_file_path",
+            "source_file_hash",
+            "source_sheet",
+            "source_column",
+        ]
+        for column in text_columns:
+            df[column] = df[column].astype("string")
+
         df.to_csv(self.config.csv_path, index=False, encoding="utf-8-sig")
         df.to_excel(self.config.xlsx_path, index=False)
         df.to_parquet(self.config.parquet_path, index=False)
