@@ -4,3 +4,29 @@ __pycache__/
 *$*.xlsx
 ~$*.xlsx
 .ipynb_checkpoints/
+
+# ML artifacts
+models/
+artifacts/
+data/raw/
+data/interim/
+data/processed/
+*.pkl
+*.joblib
+*.parquet
+
+# Environment
+.env
+.env.*
+
+# Course audit generated artifacts
+Исследование разметки транзакций/claude_coursework_package/
+Исследование разметки транзакций/figures/
+Исследование разметки транзакций/Курсовая_*.docx
+Исследование разметки транзакций/outputs/audit_findings_for_claude.md
+Исследование разметки транзакций/outputs/cash_flow_category_structure.csv
+Исследование разметки транзакций/outputs/concentration_metrics.csv
+Исследование разметки транзакций/outputs/financial_audit_metrics.csv
+Исследование разметки транзакций/outputs/reconciliation_1c_bank_by_document.csv
+Исследование разметки транзакций/outputs/reconciliation_1c_bank_by_month.csv
+Исследование разметки транзакций/outputs/reconciliation_1c_bank_summary.csv
