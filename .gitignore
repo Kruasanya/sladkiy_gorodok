@@ -8,6 +8,9 @@ __pycache__/
 # ML artifacts
 models/
 artifacts/
+Обучение моделей/artifacts/
+Обучение моделей/figures/
+Обучение моделей/outputs/
 catboost_info/
 data/raw/
 data/interim/
