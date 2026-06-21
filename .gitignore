@@ -11,6 +11,9 @@ artifacts/
 Обучение моделей/artifacts/
 Обучение моделей/figures/
 Обучение моделей/outputs/
+!Обучение моделей/figures/
+!Обучение моделей/figures/returns_cashflow/
+!Обучение моделей/figures/returns_cashflow/*.png
 catboost_info/
 data/raw/
 data/interim/

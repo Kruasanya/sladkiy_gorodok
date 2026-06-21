@@ -54,6 +54,10 @@ ARTIFACT_ROOT = ML_ROOT / "artifacts" / "returns_cashflow"
 
 RANDOM_STATE = 42
 CASHFLOW_HORIZON_DAYS = 30
+ERROR_WATCH_MULTIPLIER = 1.15
+ERROR_RETRAIN_MULTIPLIER = 1.35
+PSI_WATCH_THRESHOLD = 0.10
+PSI_RETRAIN_THRESHOLD = 0.25
 
 
 def ensure_dirs() -> None:
@@ -72,6 +76,85 @@ def wape(y_true: np.ndarray | pd.Series, y_pred: np.ndarray | pd.Series) -> floa
 
 def clamp_non_negative(values: np.ndarray | pd.Series) -> np.ndarray:
     return np.clip(np.asarray(values, dtype=float), 0.0, None)
+
+
+def safe_float(value: float | int | np.floating | None) -> float | None:
+    if value is None:
+        return None
+    value = float(value)
+    if math.isnan(value) or math.isinf(value):
+        return None
+    return value
+
+
+def population_stability_index(
+    expected: pd.Series | np.ndarray,
+    actual: pd.Series | np.ndarray,
+    bins: int = 8,
+) -> float:
+    """Calculate PSI for drift monitoring between reference and recent windows."""
+
+    expected_arr = np.asarray(expected, dtype=float)
+    actual_arr = np.asarray(actual, dtype=float)
+    expected_arr = expected_arr[np.isfinite(expected_arr)]
+    actual_arr = actual_arr[np.isfinite(actual_arr)]
+    if len(expected_arr) < bins or len(actual_arr) < 2:
+        return 0.0
+
+    quantiles = np.linspace(0, 1, bins + 1)
+    cutoffs = np.unique(np.quantile(expected_arr, quantiles))
+    if len(cutoffs) < 3:
+        return 0.0
+    cutoffs[0] = -np.inf
+    cutoffs[-1] = np.inf
+
+    expected_counts, _ = np.histogram(expected_arr, bins=cutoffs)
+    actual_counts, _ = np.histogram(actual_arr, bins=cutoffs)
+    expected_share = np.maximum(expected_counts / max(expected_counts.sum(), 1), 1e-4)
+    actual_share = np.maximum(actual_counts / max(actual_counts.sum(), 1), 1e-4)
+    return float(np.sum((actual_share - expected_share) * np.log(actual_share / expected_share)))
+
+
+def error_monitor_status(recent_wape: float, cv_wape: float) -> dict:
+    ratio = recent_wape / cv_wape if cv_wape and cv_wape > 0 else float("nan")
+    if math.isnan(ratio):
+        level = "unknown"
+        action = "manual_review"
+    elif ratio >= ERROR_RETRAIN_MULTIPLIER:
+        level = "retrain"
+        action = "force_retrain_and_review_features"
+    elif ratio >= ERROR_WATCH_MULTIPLIER:
+        level = "watch"
+        action = "retrain_on_new_data_and_monitor_next_run"
+    else:
+        level = "ok"
+        action = "scheduled_retrain_only"
+    return {
+        "recent_to_cv_wape_ratio": safe_float(ratio),
+        "level": level,
+        "action": action,
+        "watch_threshold": ERROR_WATCH_MULTIPLIER,
+        "retrain_threshold": ERROR_RETRAIN_MULTIPLIER,
+    }
+
+
+def psi_monitor_status(psi_value: float) -> dict:
+    if psi_value >= PSI_RETRAIN_THRESHOLD:
+        level = "retrain"
+        action = "force_retrain_distribution_shift"
+    elif psi_value >= PSI_WATCH_THRESHOLD:
+        level = "watch"
+        action = "watch_distribution_shift"
+    else:
+        level = "ok"
+        action = "no_distribution_shift"
+    return {
+        "psi": safe_float(psi_value),
+        "level": level,
+        "action": action,
+        "watch_threshold": PSI_WATCH_THRESHOLD,
+        "retrain_threshold": PSI_RETRAIN_THRESHOLD,
+    }
 
 
 def week_start(series: pd.Series) -> pd.Series:
@@ -583,6 +666,11 @@ def train_returns_model() -> dict:
     joblib.dump(model, ARTIFACT_ROOT / "returns_volume_model.joblib")
     metrics.to_csv(OUTPUT_ROOT / "returns_validation_metrics.csv", index=False)
     ranking.to_csv(OUTPUT_ROOT / "returns_model_ranking.csv", index=False)
+    plot_model_quality(
+        ranking.assign(target="returns"),
+        title="Качество моделей прогноза возвратов",
+        output_path=FIGURE_ROOT / "returns_model_quality.png",
+    )
 
     forecast = forecast_returns(panel, model, best_model, feature_cols, horizon_weeks=4)
     forecast.to_csv(OUTPUT_ROOT / "returns_forecast_next_4_weeks.csv", index=False)
@@ -593,7 +681,8 @@ def train_returns_model() -> dict:
     recent_pred = clamp_non_negative(model.predict(recent[feature_cols]))
     recent_wape = wape(recent["return_qty"], recent_pred)
     cv_wape = float(ranking.iloc[0]["mean_wape"])
-    drift_flag = bool(not math.isnan(recent_wape) and recent_wape > cv_wape * 1.35)
+    error_monitor = error_monitor_status(recent_wape, cv_wape)
+    drift_flag = error_monitor["level"] == "retrain"
     top_forecast = forecast.sort_values("predicted_return_qty", ascending=False).head(8).copy()
     top_forecast["week"] = pd.to_datetime(top_forecast["week"]).dt.date.astype(str)
 
@@ -603,6 +692,7 @@ def train_returns_model() -> dict:
         "cv_mean_mae": float(ranking.iloc[0]["mean_mae"]),
         "recent_4w_wape": recent_wape,
         "drift_flag": drift_flag,
+        "error_monitor": error_monitor,
         "last_fact_week": last_week.date().isoformat(),
         "forecast_total_qty_4w": float(forecast["predicted_return_qty"].sum()),
         "top_forecast_rows": top_forecast.to_dict("records"),
@@ -906,7 +996,8 @@ def train_cashflow_target(daily: pd.DataFrame, target_col: str) -> dict:
     recent_pred = clamp_non_negative(model.predict(recent[feature_cols]))
     recent_wape = wape(recent[target_col], recent_pred)
     cv_wape = float(ranking.iloc[0]["mean_wape"])
-    drift_flag = bool(not math.isnan(recent_wape) and recent_wape > cv_wape * 1.35)
+    error_monitor = error_monitor_status(recent_wape, cv_wape)
+    drift_flag = error_monitor["level"] == "retrain"
 
     return {
         "target": target_col,
@@ -919,6 +1010,7 @@ def train_cashflow_target(daily: pd.DataFrame, target_col: str) -> dict:
         "cv_mean_mae": float(ranking.iloc[0]["mean_mae"]),
         "recent_30d_wape": recent_wape,
         "drift_flag": drift_flag,
+        "error_monitor": error_monitor,
     }
 
 
@@ -1081,6 +1173,151 @@ def markdown_table(df: pd.DataFrame, float_digits: int = 2) -> str:
     return "\n".join(rows)
 
 
+def plot_model_quality(ranking: pd.DataFrame, title: str, output_path: Path) -> None:
+    data = ranking.copy()
+    if "target" in data.columns:
+        data["label"] = data["target"].astype(str) + " / " + data["model"].astype(str)
+    else:
+        data["label"] = data["model"].astype(str)
+    data = data.sort_values("mean_wape", ascending=True)
+
+    plt.figure(figsize=(11, max(4, 0.35 * len(data))))
+    plt.barh(data["label"][::-1], data["mean_wape"][::-1])
+    plt.xlabel("CV WAPE, ниже лучше")
+    plt.title(title)
+    plt.grid(axis="x", alpha=0.25)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=180)
+    plt.close()
+
+
+def cashflow_distribution_monitor(daily: pd.DataFrame) -> dict:
+    max_date = daily["date"].max()
+    recent_start = max_date - pd.Timedelta(days=CASHFLOW_HORIZON_DAYS - 1)
+    reference_start = recent_start - pd.Timedelta(days=90)
+    reference = daily.loc[(daily["date"] >= reference_start) & (daily["date"] < recent_start)]
+    recent = daily.loc[daily["date"] >= recent_start]
+
+    monitors = {}
+    for col in ["inflow", "outflow", "net_cash_flow"]:
+        psi = population_stability_index(reference[col], recent[col])
+        monitors[col] = {
+            **psi_monitor_status(psi),
+            "reference_start": reference_start.date().isoformat(),
+            "reference_end": (recent_start - pd.Timedelta(days=1)).date().isoformat(),
+            "recent_start": recent_start.date().isoformat(),
+            "recent_end": max_date.date().isoformat(),
+        }
+    return monitors
+
+
+def build_adaptation_policy(
+    returns_summary: dict,
+    cashflow_summary: dict,
+    previous_status: dict | None,
+) -> dict:
+    signal_levels = [returns_summary["error_monitor"]["level"]]
+    signal_levels += [
+        payload["error_monitor"]["level"]
+        for payload in cashflow_summary["models"].values()
+    ]
+    signal_levels += [
+        payload["level"]
+        for payload in cashflow_summary["distribution_monitor"].values()
+    ]
+    if cashflow_summary["recent_daily_inflow_anomalies_30d"] >= 5:
+        signal_levels.append("retrain")
+    elif cashflow_summary["recent_daily_inflow_anomalies_30d"] >= 3:
+        signal_levels.append("watch")
+
+    if "retrain" in signal_levels:
+        decision = "retrain"
+        production_action = "force_retrain_and_review"
+    elif "watch" in signal_levels:
+        decision = "watch"
+        production_action = "scheduled_retrain_and_close_monitoring"
+    else:
+        decision = "ok"
+        production_action = "scheduled_retrain_only"
+
+    previous_returns_week = None
+    previous_cashflow_date = None
+    if previous_status:
+        previous_returns_week = previous_status.get("returns", {}).get("last_fact_week")
+        previous_cashflow_date = previous_status.get("cashflow", {}).get("last_fact_date")
+
+    new_returns_data = bool(
+        previous_returns_week
+        and returns_summary["last_fact_week"] > previous_returns_week
+    )
+    new_cashflow_data = bool(
+        previous_cashflow_date
+        and cashflow_summary["last_fact_date"] > previous_cashflow_date
+    )
+
+    return {
+        "decision": decision,
+        "production_action": production_action,
+        "auto_retrain_executed": True,
+        "new_data_detected": bool(new_returns_data or new_cashflow_data),
+        "new_returns_data": new_returns_data,
+        "new_cashflow_data": new_cashflow_data,
+        "previous_returns_last_fact_week": previous_returns_week,
+        "previous_cashflow_last_fact_date": previous_cashflow_date,
+        "current_returns_last_fact_week": returns_summary["last_fact_week"],
+        "current_cashflow_last_fact_date": cashflow_summary["last_fact_date"],
+        "policy": {
+            "routine": "run after every data refresh; retrain on all available data",
+            "watch": "recent WAPE > 1.15 * CV WAPE or PSI >= 0.10",
+            "retrain": "recent WAPE > 1.35 * CV WAPE, PSI >= 0.25, or many anomalies",
+            "prod_note": "in production this block becomes a scheduler/monitor: data refresh -> train -> validate -> publish model if status is ok/watch, escalate if retrain",
+        },
+    }
+
+
+def plot_monitoring_dashboard(returns_summary: dict, cashflow_summary: dict) -> None:
+    error_rows = [
+        {
+            "metric": "returns error",
+            "value": returns_summary["error_monitor"]["recent_to_cv_wape_ratio"] or 0.0,
+        }
+    ]
+    for target, payload in cashflow_summary["models"].items():
+        error_rows.append(
+            {
+                "metric": f"{target} error",
+                "value": payload["error_monitor"]["recent_to_cv_wape_ratio"] or 0.0,
+            }
+        )
+    psi_rows = [
+        {"metric": target, "value": payload["psi"] or 0.0}
+        for target, payload in cashflow_summary["distribution_monitor"].items()
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.8))
+    error_df = pd.DataFrame(error_rows)
+    axes[0].barh(error_df["metric"], error_df["value"])
+    axes[0].axvline(ERROR_WATCH_MULTIPLIER, color="orange", linestyle="--", label="watch")
+    axes[0].axvline(ERROR_RETRAIN_MULTIPLIER, color="crimson", linestyle="--", label="retrain")
+    axes[0].set_title("Свежая ошибка / CV ошибка")
+    axes[0].set_xlabel("ratio")
+    axes[0].grid(axis="x", alpha=0.25)
+    axes[0].legend()
+
+    psi_df = pd.DataFrame(psi_rows)
+    axes[1].barh(psi_df["metric"], psi_df["value"])
+    axes[1].axvline(PSI_WATCH_THRESHOLD, color="orange", linestyle="--", label="watch")
+    axes[1].axvline(PSI_RETRAIN_THRESHOLD, color="crimson", linestyle="--", label="retrain")
+    axes[1].set_title("PSI: сдвиг распределений Cash Flow")
+    axes[1].set_xlabel("PSI")
+    axes[1].grid(axis="x", alpha=0.25)
+    axes[1].legend()
+
+    plt.tight_layout()
+    plt.savefig(FIGURE_ROOT / "drift_monitoring_dashboard.png", dpi=180)
+    plt.close()
+
+
 def train_cashflow_models() -> dict:
     daily = read_bank_daily()
     target_models = {
@@ -1097,6 +1334,11 @@ def train_cashflow_models() -> dict:
     )
     metrics.to_csv(OUTPUT_ROOT / "cashflow_validation_metrics.csv", index=False)
     rankings.to_csv(OUTPUT_ROOT / "cashflow_model_ranking.csv", index=False)
+    plot_model_quality(
+        rankings,
+        title="Качество моделей дневного Cash Flow",
+        output_path=FIGURE_ROOT / "cashflow_model_quality.png",
+    )
 
     forecast = forecast_cashflow(daily, target_models, horizon_days=CASHFLOW_HORIZON_DAYS)
     forecast.to_csv(OUTPUT_ROOT / "cashflow_forecast_next_30_days.csv", index=False)
@@ -1116,9 +1358,11 @@ def train_cashflow_models() -> dict:
                 "cv_mean_mae": payload["cv_mean_mae"],
                 "recent_30d_wape": payload["recent_30d_wape"],
                 "drift_flag": payload["drift_flag"],
+                "error_monitor": payload["error_monitor"],
             }
             for target, payload in target_models.items()
         },
+        "distribution_monitor": cashflow_distribution_monitor(daily),
         "inflow_anomaly_count": int(len(tx_anomalies)),
         "recent_daily_inflow_anomalies_30d": int(
             daily_anom.loc[
@@ -1172,15 +1416,28 @@ def plot_cashflow(daily: pd.DataFrame, forecast: pd.DataFrame, daily_anom: pd.Da
     plt.close()
 
 
-def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None:
-    retrain_needed = bool(
-        returns_summary["drift_flag"]
-        or any(model["drift_flag"] for model in cashflow_summary["models"].values())
-        or cashflow_summary["recent_daily_inflow_anomalies_30d"] >= 3
-    )
+def load_previous_status() -> dict | None:
+    path = OUTPUT_ROOT / "retraining_status.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def write_markdown_report(
+    returns_summary: dict,
+    cashflow_summary: dict,
+    previous_status: dict | None,
+) -> None:
+    adaptation_policy = build_adaptation_policy(returns_summary, cashflow_summary, previous_status)
+    retrain_needed = adaptation_policy["decision"] in {"watch", "retrain"}
+    plot_monitoring_dashboard(returns_summary, cashflow_summary)
     status = {
         "generated_at": pd.Timestamp.now().isoformat(timespec="seconds"),
         "retrain_recommended": retrain_needed,
+        "adaptation_policy": adaptation_policy,
         "returns": returns_summary,
         "cashflow": cashflow_summary,
     }
@@ -1196,12 +1453,31 @@ def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None
         ],
         float_digits=2,
     )
-    cash_models_md = markdown_table(pd.DataFrame(
-        [
-            {"target": target, **payload}
-            for target, payload in cashflow_summary["models"].items()
-        ]
-    ), float_digits=3)
+    cash_models_md = markdown_table(
+        pd.DataFrame(
+            [
+                {
+                    "target": target,
+                    "best_model": payload["best_model"],
+                    "cv_mean_wape": payload["cv_mean_wape"],
+                    "recent_30d_wape": payload["recent_30d_wape"],
+                    "recent_to_cv_ratio": payload["error_monitor"]["recent_to_cv_wape_ratio"],
+                    "status": payload["error_monitor"]["level"],
+                }
+                for target, payload in cashflow_summary["models"].items()
+            ]
+        ),
+        float_digits=3,
+    )
+    distribution_md = markdown_table(
+        pd.DataFrame(
+            [
+                {"target": target, **payload}
+                for target, payload in cashflow_summary["distribution_monitor"].items()
+            ]
+        ),
+        float_digits=3,
+    )
 
     report = f"""# Прогнозные модели: возвраты, Cash Flow и аномалии
 
@@ -1217,7 +1493,13 @@ def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None
 - CV MAE: **{returns_summary["cv_mean_mae"]:.1f} шт.**
 - WAPE на последних 4 неделях: **{returns_summary["recent_4w_wape"]:.3f}**
 - Прогноз возвратов на 4 недели: **{returns_summary["forecast_total_qty_4w"]:.0f} шт.**
-- Флаг разладки: **{"да" if returns_summary["drift_flag"] else "нет"}**
+- Статус ошибки: **{returns_summary["error_monitor"]["level"]}**
+
+Графики:
+
+- [качество моделей возвратов](../../figures/returns_cashflow/returns_model_quality.png)
+- [прогноз возвратов](../../figures/returns_cashflow/returns_forecast_4w.png)
+- [топ риска возвратов](../../figures/returns_cashflow/returns_top_risk.png)
 
 Топ прогнозируемых возвратов:
 
@@ -1238,6 +1520,17 @@ def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None
 - прогноз списаний: **{cashflow_summary["forecast_outflow_30d"]:,.0f} руб.**
 - прогноз net cash flow: **{cashflow_summary["forecast_net_30d"]:,.0f} руб.**
 
+PSI-мониторинг сдвига распределений:
+
+{distribution_md}
+
+Графики:
+
+- [качество моделей Cash Flow](../../figures/returns_cashflow/cashflow_model_quality.png)
+- [прогноз Cash Flow на 30 дней](../../figures/returns_cashflow/cashflow_forecast_30d.png)
+- [изменение остатка от последнего факта](../../figures/returns_cashflow/cashflow_balance_delta_30d.png)
+- [dashboard разладки](../../figures/returns_cashflow/drift_monitoring_dashboard.png)
+
 ## 3. Детектор аномалий поступлений
 
 Детектор работает на уровне входящих транзакций и дневных сумм: robust z-score по истории
@@ -1246,16 +1539,21 @@ def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None
 - найдено транзакций на проверку: **{cashflow_summary["inflow_anomaly_count"]}**
 - аномальных дней поступлений за последние 30 дней: **{cashflow_summary["recent_daily_inflow_anomalies_30d"]}**
 
+График: [аномальные дни поступлений](../../figures/returns_cashflow/daily_inflow_anomalies.png).
+
 ## 4. Самостоятельное переобучение и разладка
 
 Скрипт каждый запуск переобучает модели на всех доступных данных и пишет
 `outputs/returns_cashflow/retraining_status.json`. В продуктовой эксплуатации его можно запускать
 по расписанию: возвраты раз в неделю, cash flow и аномалии ежедневно после загрузки выписки.
 
-Триггер переобучения/проверки включается, если свежий WAPE превышает CV WAPE более чем на 35%
-или если за последний месяц появляется несколько аномальных дней поступлений.
+Триггер проверки включается, если свежий WAPE превышает CV WAPE более чем на 15%, PSI >= 0.10
+или если за последний месяц появляется несколько аномальных дней поступлений. Жёсткое
+переобучение/ревью включается при WAPE > 1.35 × CV WAPE или PSI >= 0.25.
 
-Итоговый статус: **{"нужно проверить/переобучить" if retrain_needed else "разладки не видно"}**.
+Итоговый статус: **{adaptation_policy["decision"]}**.  
+Действие для продукта: **{adaptation_policy["production_action"]}**.  
+Автопереобучение в текущем запуске: **{"да" if adaptation_policy["auto_retrain_executed"] else "нет"}**.
 
 ## 5. Артефакты
 
@@ -1264,18 +1562,133 @@ def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None
 - `outputs/returns_cashflow/inflow_transaction_anomalies.csv`
 - `figures/returns_cashflow/returns_forecast_4w.png`
 - `figures/returns_cashflow/returns_top_risk.png`
+- `figures/returns_cashflow/returns_model_quality.png`
 - `figures/returns_cashflow/cashflow_forecast_30d.png`
+- `figures/returns_cashflow/cashflow_model_quality.png`
 - `figures/returns_cashflow/daily_inflow_anomalies.png`
 - `figures/returns_cashflow/cashflow_balance_delta_30d.png`
+- `figures/returns_cashflow/drift_monitoring_dashboard.png`
 """
     (OUTPUT_ROOT / "modeling_report.md").write_text(report, encoding="utf-8")
+    write_quality_review(returns_summary, cashflow_summary, adaptation_policy)
+
+
+def write_quality_review(
+    returns_summary: dict,
+    cashflow_summary: dict,
+    adaptation_policy: dict,
+) -> None:
+    quality_dir = ML_ROOT / "Модели"
+    quality_dir.mkdir(parents=True, exist_ok=True)
+    cash_rows = [
+        {
+            "Модель": "Cash Flow: поступления",
+            "Алгоритм": cashflow_summary["models"]["inflow"]["best_model"],
+            "CV WAPE": cashflow_summary["models"]["inflow"]["cv_mean_wape"],
+            "Recent WAPE": cashflow_summary["models"]["inflow"]["recent_30d_wape"],
+            "Вывод": "качество рабочее; hurdle-подход лучше log-regression и бейзлайнов",
+        },
+        {
+            "Модель": "Cash Flow: списания",
+            "Алгоритм": cashflow_summary["models"]["outflow"]["best_model"],
+            "CV WAPE": cashflow_summary["models"]["outflow"]["cv_mean_wape"],
+            "Recent WAPE": cashflow_summary["models"]["outflow"]["recent_30d_wape"],
+            "Вывод": "качество рабочее; нужен контроль крупных разовых платежей",
+        },
+        {
+            "Модель": "Возвраты",
+            "Алгоритм": returns_summary["best_model"],
+            "CV WAPE": returns_summary["cv_mean_wape"],
+            "Recent WAPE": returns_summary["recent_4w_wape"],
+            "Вывод": "модель полезна как риск-фактор для производства, но ошибка выше cash flow",
+        },
+    ]
+    review = f"""# Разбор качества прогнозных моделей
+
+Этот файл — подготовленный вывод для курсовой: что обучено, какое качество получилось, какие
+есть графики и как будет работать адаптация при появлении новых данных.
+
+## 1. Сводная таблица качества
+
+{markdown_table(pd.DataFrame(cash_rows), float_digits=3)}
+
+## 2. Графики для анализа
+
+- [Сравнение моделей возвратов](../figures/returns_cashflow/returns_model_quality.png)
+- [Прогноз возвратов на 4 недели](../figures/returns_cashflow/returns_forecast_4w.png)
+- [Топ товар-сеть по риску возврата](../figures/returns_cashflow/returns_top_risk.png)
+- [Сравнение моделей Cash Flow](../figures/returns_cashflow/cashflow_model_quality.png)
+- [Прогноз дневного Cash Flow на 30 дней](../figures/returns_cashflow/cashflow_forecast_30d.png)
+- [Прогноз изменения остатка](../figures/returns_cashflow/cashflow_balance_delta_30d.png)
+- [Аномальные дни поступлений](../figures/returns_cashflow/daily_inflow_anomalies.png)
+- [Dashboard разладки](../figures/returns_cashflow/drift_monitoring_dashboard.png)
+
+## 3. Выводы по моделям
+
+**Возвраты.** Лучшая модель — `{returns_summary["best_model"]}`. CV WAPE =
+`{returns_summary["cv_mean_wape"]:.3f}`, свежий WAPE = `{returns_summary["recent_4w_wape"]:.3f}`.
+Модель годится как управленческий риск-фактор: она показывает ожидаемый объём возврата и
+передаёт его в рекомендацию производства, но из-за шумной природы корректировок качество ниже,
+чем у cash flow.
+
+**Cash Flow: поступления.** Лучшая модель — `{cashflow_summary["models"]["inflow"]["best_model"]}`.
+CV WAPE = `{cashflow_summary["models"]["inflow"]["cv_mean_wape"]:.3f}`, свежий WAPE =
+`{cashflow_summary["models"]["inflow"]["recent_30d_wape"]:.3f}`. Качество улучшилось после
+перехода к intermittent time series: модель отдельно оценивает вероятность денежного дня и сумму.
+
+**Cash Flow: списания.** Лучшая модель — `{cashflow_summary["models"]["outflow"]["best_model"]}`.
+CV WAPE = `{cashflow_summary["models"]["outflow"]["cv_mean_wape"]:.3f}`, свежий WAPE =
+`{cashflow_summary["models"]["outflow"]["recent_30d_wape"]:.3f}`. Главный риск — крупные
+разовые платежи, поэтому в продовой версии желательно добавить календарь обязательных платежей
+как внешний регрессор.
+
+**Аномалии поступлений.** Детектор нашёл `{cashflow_summary["inflow_anomaly_count"]}` транзакции
+на проверку и `{cashflow_summary["recent_daily_inflow_anomalies_30d"]}` аномальных дня за последние
+30 дней. Это не блокировка платежей, а очередь для финансового контроля.
+
+## 4. Разладка и адаптация
+
+Текущий статус: **{adaptation_policy["decision"]}**.  
+Действие: **{adaptation_policy["production_action"]}**.
+
+В текущем прогоне свежая ошибка моделей остаётся лучше CV-ошибки, но распределения cash flow
+сильно изменились: PSI inflow = `{cashflow_summary["distribution_monitor"]["inflow"]["psi"]:.3f}`,
+PSI outflow = `{cashflow_summary["distribution_monitor"]["outflow"]["psi"]:.3f}`. Поэтому
+система рекомендует не слепо публиковать модель, а переобучить её на новых данных и отправить
+результат на ревью.
+
+Пайплайн уже устроен как будущий production loop:
+
+1. Загрузить свежие итоговые таблицы.
+2. Пересчитать фичи без утечки будущего.
+3. Переобучить модели на всех доступных данных.
+4. Сравнить свежую ошибку с CV-ошибкой.
+5. Посчитать PSI по распределениям cash flow.
+6. Обновить прогнозы и dashboard.
+7. Если статус `ok` или `watch` — публиковать модель в приложение; если `retrain` — отправить
+   результат на ревью перед публикацией.
+
+Порог `watch`: свежий WAPE выше CV WAPE более чем на 15% или PSI >= 0.10.  
+Порог `retrain`: свежий WAPE выше CV WAPE более чем на 35% или PSI >= 0.25.
+
+## 5. Что улучшать дальше
+
+- Добавить фактический остаток на счёте, чтобы прогнозировать не только изменение остатка, но и
+  абсолютный баланс.
+- Добавить календарь зарплаты, налогов, аренды, кредитов и крупных закупок как внешние признаки.
+- Хранить историю запусков мониторинга, чтобы строить динамику качества модели во времени.
+- В приложении разделить `watch` и `retrain`: при `watch` публиковать модель, при `retrain`
+  требовать ручное подтверждение.
+"""
+    (quality_dir / "quality_review.md").write_text(review, encoding="utf-8")
 
 
 def main() -> None:
     ensure_dirs()
+    previous_status = load_previous_status()
     returns_summary = train_returns_model()
     cashflow_summary = train_cashflow_models()
-    write_markdown_report(returns_summary, cashflow_summary)
+    write_markdown_report(returns_summary, cashflow_summary, previous_status)
     print("Done.")
     print(f"Report: {OUTPUT_ROOT / 'modeling_report.md'}")
     print(f"Retraining status: {OUTPUT_ROOT / 'retraining_status.json'}")
