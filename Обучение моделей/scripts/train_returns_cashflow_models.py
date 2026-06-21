@@ -2,8 +2,9 @@
 """Train return-volume, daily cash-flow and inflow-anomaly models.
 
 The script is intentionally self-contained: it reads the final 1C/bank tables,
-builds leakage-safe time-series features, compares statistical baselines with
-CatBoost/LightGBM, saves forecasts, figures and a retraining/drift status file.
+builds leakage-safe time-series features, compares statistical baselines,
+CatBoost/LightGBM and hurdle models, saves forecasts, figures and a
+retraining/drift status file.
 """
 
 from __future__ import annotations
@@ -20,8 +21,13 @@ import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from catboost import CatBoostRegressor
-from sklearn.ensemble import ExtraTreesRegressor, IsolationForest, RandomForestRegressor
+from catboost import CatBoostClassifier, CatBoostRegressor
+from sklearn.ensemble import (
+    ExtraTreesClassifier,
+    ExtraTreesRegressor,
+    IsolationForest,
+    RandomForestRegressor,
+)
 from sklearn.metrics import mean_absolute_error
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -47,6 +53,7 @@ FIGURE_ROOT = ML_ROOT / "figures" / "returns_cashflow"
 ARTIFACT_ROOT = ML_ROOT / "artifacts" / "returns_cashflow"
 
 RANDOM_STATE = 42
+CASHFLOW_HORIZON_DAYS = 30
 
 
 def ensure_dirs() -> None:
@@ -87,6 +94,13 @@ def add_calendar_features(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
     out["is_quarter_end"] = dt.dt.is_quarter_end.astype(int)
     out["is_payday_window"] = out["day"].isin([5, 10, 15, 20, 25, 30]).astype(int)
     out["is_summer"] = out["month"].isin([6, 7, 8]).astype(int)
+    out["days_to_month_end"] = dt.dt.days_in_month - out["day"]
+    out["day_of_week_sin"] = np.sin(2 * np.pi * out["day_of_week"] / 7)
+    out["day_of_week_cos"] = np.cos(2 * np.pi * out["day_of_week"] / 7)
+    out["day_sin"] = np.sin(2 * np.pi * out["day"] / 31)
+    out["day_cos"] = np.cos(2 * np.pi * out["day"] / 31)
+    out["month_sin"] = np.sin(2 * np.pi * out["month"] / 12)
+    out["month_cos"] = np.cos(2 * np.pi * out["month"] / 12)
     return out
 
 
@@ -272,6 +286,41 @@ class NumericOnlyModel:
         return clamp_non_negative(self.model.predict(X[self.columns_]))
 
 
+class HurdleExpectedValueModel:
+    """Two-stage model for sparse cash-flow series: P(non-zero) * E(amount | non-zero)."""
+
+    def __init__(self, classifier: object, amount_model: object):
+        self.classifier = classifier
+        self.amount_model = amount_model
+        self.columns_: list[str] = []
+        self.always_zero_ = False
+        self.always_one_ = False
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "HurdleExpectedValueModel":
+        numeric = X.select_dtypes(include=[np.number]).fillna(0.0)
+        self.columns_ = list(numeric.columns)
+        y_float = y.astype(float)
+        nonzero = y_float.gt(0)
+        self.always_zero_ = bool(nonzero.sum() == 0)
+        self.always_one_ = bool(nonzero.sum() == len(nonzero))
+        if not self.always_zero_ and not self.always_one_:
+            self.classifier.fit(numeric, nonzero.astype(int))
+        if nonzero.sum() > 0:
+            self.amount_model.fit(numeric.loc[nonzero], np.log1p(y_float.loc[nonzero]))
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        numeric = X[self.columns_].fillna(0.0)
+        if self.always_zero_:
+            return np.zeros(len(numeric))
+        if self.always_one_:
+            probability = np.ones(len(numeric))
+        else:
+            probability = self.classifier.predict_proba(numeric)[:, 1]
+        amount = np.expm1(self.amount_model.predict(numeric))
+        return clamp_non_negative(probability * amount)
+
+
 def make_return_candidates(cat_features: list[str]) -> dict[str, object]:
     candidates = {
         "baseline_zero": BaselineRegressor("baseline_zero"),
@@ -317,8 +366,48 @@ def make_return_candidates(cat_features: list[str]) -> dict[str, object]:
 def make_cashflow_candidates() -> dict[str, object]:
     candidates = {
         "seasonal_naive_7": BaselineRegressor("target_lag_7"),
+        "same_weekday_median_8": BaselineRegressor("target_same_dow_roll_median_8"),
+        "ewm_mean_14": BaselineRegressor("target_ewm_mean_14"),
         "moving_average_7": BaselineRegressor("target_roll_mean_7"),
         "moving_average_30": BaselineRegressor("target_roll_mean_30"),
+        "hurdle_extra_trees": HurdleExpectedValueModel(
+            ExtraTreesClassifier(
+                n_estimators=350,
+                min_samples_leaf=8,
+                class_weight="balanced",
+                random_state=RANDOM_STATE,
+                n_jobs=-1,
+            ),
+            ExtraTreesRegressor(
+                n_estimators=350,
+                min_samples_leaf=5,
+                random_state=RANDOM_STATE,
+                n_jobs=-1,
+            ),
+        ),
+        "hurdle_catboost": HurdleExpectedValueModel(
+            CatBoostClassifier(
+                loss_function="Logloss",
+                iterations=300,
+                depth=3,
+                learning_rate=0.04,
+                l2_leaf_reg=20,
+                auto_class_weights="Balanced",
+                random_seed=RANDOM_STATE,
+                verbose=False,
+                allow_writing_files=False,
+            ),
+            CatBoostRegressor(
+                loss_function="MAE",
+                iterations=300,
+                depth=3,
+                learning_rate=0.04,
+                l2_leaf_reg=20,
+                random_seed=RANDOM_STATE,
+                verbose=False,
+                allow_writing_files=False,
+            ),
+        ),
         "catboost_log_mae": LogTargetModel(
             CatBoostRegressor(
                 loss_function="MAE",
@@ -705,14 +794,46 @@ def add_cashflow_features(daily: pd.DataFrame, target_col: str) -> pd.DataFrame:
     out = daily.copy()
     target = out[target_col].astype(float)
     shifted = target.shift(1)
-    for lag in (1, 2, 3, 7, 14, 28):
+    for lag in (1, 2, 3, 4, 5, 6, 7, 14, 21, 28):
         out[f"target_lag_{lag}"] = target.shift(lag)
-    for window in (7, 14, 30):
+    for window in (7, 14, 30, 60):
         out[f"target_roll_mean_{window}"] = shifted.rolling(window, min_periods=1).mean()
+        out[f"target_roll_median_{window}"] = shifted.rolling(window, min_periods=1).median()
         out[f"target_roll_std_{window}"] = shifted.rolling(window, min_periods=2).std()
+        out[f"target_roll_q75_{window}"] = shifted.rolling(window, min_periods=2).quantile(0.75)
         out[f"target_nonzero_days_{window}"] = (
             (target.shift(1) > 0).rolling(window, min_periods=1).sum()
         )
+        out[f"target_nonzero_share_{window}"] = out[f"target_nonzero_days_{window}"] / window
+    out["target_ewm_mean_7"] = shifted.ewm(span=7, adjust=False, min_periods=1).mean()
+    out["target_ewm_mean_14"] = shifted.ewm(span=14, adjust=False, min_periods=1).mean()
+    out["target_ewm_mean_30"] = shifted.ewm(span=30, adjust=False, min_periods=1).mean()
+
+    out["target_nonzero_flag_lag_1"] = target.shift(1).gt(0).astype(int)
+    out["target_nonzero_flag_lag_7"] = target.shift(7).gt(0).astype(int)
+    nonzero_dates = pd.Series(pd.NaT, index=out.index, dtype="datetime64[ns]")
+    nonzero_dates.loc[target.gt(0)] = out.loc[target.gt(0), "date"]
+    previous_nonzero_date = nonzero_dates.ffill().shift(1)
+    out["days_since_target_nonzero"] = (
+        pd.to_datetime(out["date"]) - previous_nonzero_date
+    ).dt.days.fillna(999)
+    previous_nonzero_amount = target.where(target.gt(0)).ffill().shift(1)
+    out["previous_nonzero_target"] = previous_nonzero_amount.fillna(0.0)
+
+    same_dow_shifted = out.groupby("day_of_week", sort=False)[target_col].shift(1)
+    same_dow_group = same_dow_shifted.groupby(out["day_of_week"], sort=False)
+    out["target_same_dow_lag_1"] = same_dow_shifted
+    out["target_same_dow_roll_mean_4"] = same_dow_group.rolling(4, min_periods=1).mean().reset_index(level=0, drop=True)
+    out["target_same_dow_roll_median_8"] = same_dow_group.rolling(8, min_periods=1).median().reset_index(level=0, drop=True)
+    out["target_same_dow_nonzero_share_8"] = (
+        same_dow_shifted.gt(0)
+        .astype(float)
+        .groupby(out["day_of_week"], sort=False)
+        .rolling(8, min_periods=1)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
     for col in [
         "transaction_count",
         "credit_transaction_count",
@@ -729,7 +850,9 @@ def add_cashflow_features(daily: pd.DataFrame, target_col: str) -> pd.DataFrame:
         if col == target_col:
             continue
         out[f"{col}_lag_1"] = out[col].shift(1)
+        out[f"{col}_lag_7"] = out[col].shift(7)
         out[f"{col}_roll_mean_7"] = out[col].shift(1).rolling(7, min_periods=1).mean()
+        out[f"{col}_roll_mean_30"] = out[col].shift(1).rolling(30, min_periods=1).mean()
     feature_cols = [c for c in out.columns if c not in ["date", "inflow", "outflow", "net_cash_flow"]]
     out[feature_cols] = out[feature_cols].fillna(0.0)
     return out
@@ -750,8 +873,10 @@ def train_cashflow_target(daily: pd.DataFrame, target_col: str) -> dict:
     ]
     featured = featured.loc[featured["date"] >= featured["date"].min() + pd.Timedelta(days=30)].copy()
     max_date = featured["date"].max()
+    test_window_days = 30
     test_starts = [
-        max_date - pd.Timedelta(days=28 * i + 27) for i in reversed(range(4))
+        max_date - pd.Timedelta(days=test_window_days * i + test_window_days - 1)
+        for i in reversed(range(4))
     ]
     candidates = make_cashflow_candidates()
     metrics, best_model = evaluate_time_splits(
@@ -761,7 +886,7 @@ def train_cashflow_target(daily: pd.DataFrame, target_col: str) -> dict:
         feature_cols=feature_cols,
         candidates=candidates,
         test_windows=test_starts,
-        test_window_size_days=28,
+        test_window_size_days=test_window_days,
     )
     ranking = (
         metrics.groupby("model", as_index=False)
@@ -776,7 +901,7 @@ def train_cashflow_target(daily: pd.DataFrame, target_col: str) -> dict:
     )
     joblib.dump(model, ARTIFACT_ROOT / f"cashflow_{target_col}_model.joblib")
 
-    latest_start = max_date - pd.Timedelta(days=13)
+    latest_start = max_date - pd.Timedelta(days=CASHFLOW_HORIZON_DAYS - 1)
     recent = featured.loc[featured["date"] >= latest_start].copy()
     recent_pred = clamp_non_negative(model.predict(recent[feature_cols]))
     recent_wape = wape(recent[target_col], recent_pred)
@@ -792,12 +917,16 @@ def train_cashflow_target(daily: pd.DataFrame, target_col: str) -> dict:
         "ranking": ranking,
         "cv_mean_wape": cv_wape,
         "cv_mean_mae": float(ranking.iloc[0]["mean_mae"]),
-        "recent_14d_wape": recent_wape,
+        "recent_30d_wape": recent_wape,
         "drift_flag": drift_flag,
     }
 
 
-def forecast_cashflow(daily: pd.DataFrame, target_models: dict[str, dict], horizon_days: int = 14) -> pd.DataFrame:
+def forecast_cashflow(
+    daily: pd.DataFrame,
+    target_models: dict[str, dict],
+    horizon_days: int = CASHFLOW_HORIZON_DAYS,
+) -> pd.DataFrame:
     work = daily.copy().sort_values("date").reset_index(drop=True)
     max_date = work["date"].max()
     forecasts: list[dict] = []
@@ -969,22 +1098,23 @@ def train_cashflow_models() -> dict:
     metrics.to_csv(OUTPUT_ROOT / "cashflow_validation_metrics.csv", index=False)
     rankings.to_csv(OUTPUT_ROOT / "cashflow_model_ranking.csv", index=False)
 
-    forecast = forecast_cashflow(daily, target_models, horizon_days=14)
-    forecast.to_csv(OUTPUT_ROOT / "cashflow_forecast_next_14_days.csv", index=False)
+    forecast = forecast_cashflow(daily, target_models, horizon_days=CASHFLOW_HORIZON_DAYS)
+    forecast.to_csv(OUTPUT_ROOT / "cashflow_forecast_next_30_days.csv", index=False)
     tx_anomalies, daily_anom = detect_inflow_anomalies(daily)
     plot_cashflow(daily, forecast, daily_anom)
 
     return {
         "last_fact_date": daily["date"].max().date().isoformat(),
-        "forecast_net_14d": float(forecast["predicted_net_cash_flow"].sum()),
-        "forecast_inflow_14d": float(forecast["predicted_inflow"].sum()),
-        "forecast_outflow_14d": float(forecast["predicted_outflow"].sum()),
+        "forecast_horizon_days": CASHFLOW_HORIZON_DAYS,
+        "forecast_net_30d": float(forecast["predicted_net_cash_flow"].sum()),
+        "forecast_inflow_30d": float(forecast["predicted_inflow"].sum()),
+        "forecast_outflow_30d": float(forecast["predicted_outflow"].sum()),
         "models": {
             target: {
                 "best_model": payload["best_model"],
                 "cv_mean_wape": payload["cv_mean_wape"],
                 "cv_mean_mae": payload["cv_mean_mae"],
-                "recent_14d_wape": payload["recent_14d_wape"],
+                "recent_30d_wape": payload["recent_30d_wape"],
                 "drift_flag": payload["drift_flag"],
             }
             for target, payload in target_models.items()
@@ -1007,12 +1137,13 @@ def plot_cashflow(daily: pd.DataFrame, forecast: pd.DataFrame, daily_anom: pd.Da
     plt.plot(recent["date"], recent["outflow"], label="Списания факт", alpha=0.75)
     plt.plot(forecast_dates, forecast["predicted_inflow"], label="Поступления прогноз", linewidth=2)
     plt.plot(forecast_dates, forecast["predicted_outflow"], label="Списания прогноз", linewidth=2)
-    plt.title("Прогноз дневного Cash Flow на 14 дней")
+    plt.title(f"Прогноз дневного Cash Flow на {CASHFLOW_HORIZON_DAYS} дней")
     plt.ylabel("Рубли")
     plt.grid(alpha=0.25)
     plt.legend()
+    plt.gcf().autofmt_xdate()
     plt.tight_layout()
-    plt.savefig(FIGURE_ROOT / "cashflow_forecast_14d.png", dpi=180)
+    plt.savefig(FIGURE_ROOT / "cashflow_forecast_30d.png", dpi=180)
     plt.close()
 
     recent_anom = daily_anom.tail(120)
@@ -1024,6 +1155,7 @@ def plot_cashflow(daily: pd.DataFrame, forecast: pd.DataFrame, daily_anom: pd.Da
     plt.ylabel("Рубли")
     plt.grid(alpha=0.25)
     plt.legend()
+    plt.gcf().autofmt_xdate()
     plt.tight_layout()
     plt.savefig(FIGURE_ROOT / "daily_inflow_anomalies.png", dpi=180)
     plt.close()
@@ -1034,8 +1166,9 @@ def plot_cashflow(daily: pd.DataFrame, forecast: pd.DataFrame, daily_anom: pd.Da
     plt.title("Прогноз изменения остатка от последнего факта")
     plt.ylabel("Рубли")
     plt.grid(axis="y", alpha=0.25)
+    plt.gcf().autofmt_xdate()
     plt.tight_layout()
-    plt.savefig(FIGURE_ROOT / "cashflow_balance_delta_14d.png", dpi=180)
+    plt.savefig(FIGURE_ROOT / "cashflow_balance_delta_30d.png", dpi=180)
     plt.close()
 
 
@@ -1092,17 +1225,18 @@ def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None
 
 ## 2. Прогноз дневного Cash Flow
 
-Поступления и списания прогнозируются отдельными временными рядами, затем собираются в
-`net_cash_flow = inflow - outflow`. Абсолютный остаток на счёте требует фактический остаток
-из банка; текущий прогноз считает изменение остатка от последнего факта.
+Поступления и списания прогнозируются отдельными intermittent time series: модель сначала
+оценивает вероятность ненулевого денежного дня, затем ожидаемую сумму, после чего собирает
+`net_cash_flow = inflow - outflow`. Абсолютный остаток на счёте требует фактический остаток из
+банка; текущий прогноз считает изменение остатка от последнего факта.
 
 {cash_models_md}
 
-На горизонте 14 дней:
+На горизонте {cashflow_summary["forecast_horizon_days"]} дней:
 
-- прогноз поступлений: **{cashflow_summary["forecast_inflow_14d"]:,.0f} руб.**
-- прогноз списаний: **{cashflow_summary["forecast_outflow_14d"]:,.0f} руб.**
-- прогноз net cash flow: **{cashflow_summary["forecast_net_14d"]:,.0f} руб.**
+- прогноз поступлений: **{cashflow_summary["forecast_inflow_30d"]:,.0f} руб.**
+- прогноз списаний: **{cashflow_summary["forecast_outflow_30d"]:,.0f} руб.**
+- прогноз net cash flow: **{cashflow_summary["forecast_net_30d"]:,.0f} руб.**
 
 ## 3. Детектор аномалий поступлений
 
@@ -1126,13 +1260,13 @@ def write_markdown_report(returns_summary: dict, cashflow_summary: dict) -> None
 ## 5. Артефакты
 
 - `outputs/returns_cashflow/returns_forecast_next_4_weeks.csv`
-- `outputs/returns_cashflow/cashflow_forecast_next_14_days.csv`
+- `outputs/returns_cashflow/cashflow_forecast_next_30_days.csv`
 - `outputs/returns_cashflow/inflow_transaction_anomalies.csv`
 - `figures/returns_cashflow/returns_forecast_4w.png`
 - `figures/returns_cashflow/returns_top_risk.png`
-- `figures/returns_cashflow/cashflow_forecast_14d.png`
+- `figures/returns_cashflow/cashflow_forecast_30d.png`
 - `figures/returns_cashflow/daily_inflow_anomalies.png`
-- `figures/returns_cashflow/cashflow_balance_delta_14d.png`
+- `figures/returns_cashflow/cashflow_balance_delta_30d.png`
 """
     (OUTPUT_ROOT / "modeling_report.md").write_text(report, encoding="utf-8")
 
