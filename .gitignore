@@ -25,6 +25,15 @@ data/processed/
 # Environment
 .env
 .env.*
+!.env.example
+
+# КлодУчет: локальные окружения и сгенерированные артефакты
+kloduchet/backend/venv/
+kloduchet/backend/db.sqlite3
+kloduchet/backend/staticfiles/
+kloduchet/frontend/node_modules/
+kloduchet/frontend/dist/
+kloduchet/data/
 
 # Course audit generated artifacts
 Исследование разметки транзакций/claude_coursework_package/

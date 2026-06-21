@@ -1,0 +1,301 @@
+:root {
+  --text: #2b2b33;
+  --text-muted: #6b6375;
+  --bg: #f5f6f8;
+  --border: #dcdde2;
+  --accent: #3b6ea5;
+  --accent-dark: #2b5683;
+  --danger: #b3261e;
+  --warning: #8a6116;
+  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
+
+  font: 15px/1.45 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 1280px;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 22px;
+  margin: 0 0 16px;
+}
+
+h2 {
+  font-size: 17px;
+  margin: 24px 0 8px;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent-dark);
+}
+
+button:disabled {
+  background: #b9c4cd;
+  cursor: not-allowed;
+}
+
+input,
+select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+}
+
+a {
+  color: var(--accent);
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 24px;
+  background: #1f2733;
+  color: #fff;
+}
+
+.app-header .brand {
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.app-header nav {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+}
+
+.app-header nav a {
+  color: #c6cdd6;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 6px 4px;
+}
+
+.app-header nav a.active {
+  color: #fff;
+  border-bottom: 2px solid var(--accent);
+}
+
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-box button {
+  background: transparent;
+  border: 1px solid #56606e;
+}
+
+.app-main {
+  flex: 1;
+  padding: 24px 32px;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 320px;
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.login-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.muted {
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.error-box {
+  background: #fdecea;
+  color: var(--danger);
+  border: 1px solid #f5c6c2;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.warning-text {
+  color: var(--warning);
+  font-size: 13px;
+}
+
+.empty-state {
+  color: var(--text-muted);
+  padding: 24px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.inline-form,
+.upload-form {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.upload-form label,
+.filters-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.filters-bar {
+  display: flex;
+  gap: 20px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.filters-bar select[multiple] {
+  min-width: 220px;
+  height: 70px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.data-table thead th {
+  background: #eef1f4;
+  font-weight: 600;
+}
+
+.data-table tfoot td {
+  font-weight: 600;
+  background: #f7f8fa;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.status-completed {
+  background: #e3f3e1;
+  color: #2a6b2a;
+}
+
+.status-failed {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.status-cancelled {
+  background: #eee;
+  color: #555;
+}
+
+.status-processing,
+.status-uploaded,
+.status-queued,
+.status-validated {
+  background: #fff5e0;
+  color: #8a6116;
+}
+
+.disclaimer-box {
+  background: #eef3f8;
+  border: 1px solid #c9d8e6;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #2b5683;
+  margin-bottom: 16px;
+}
+
+.chart-box {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
