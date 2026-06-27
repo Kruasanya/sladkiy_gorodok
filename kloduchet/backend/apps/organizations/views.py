@@ -1,9 +1,13 @@
+from django.contrib.auth import get_user_model
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 
 from .models import AuditEvent, Organization
-from .serializers import OrganizationSerializer
+from .serializers import OrganizationSerializer, UserSerializer
+
+User = get_user_model()
 
 
 class OrganizationViewSet(viewsets.ModelViewSet):
@@ -71,3 +75,12 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             new_values=OrganizationSerializer(instance).data,
         )
         return Response(self.get_serializer(instance).data)
+
+
+class UserViewSet(viewsets.ModelViewSet):
+    """Управление пользователями: видно администраторам (is_staff)."""
+
+    queryset = User.objects.select_related("profile").order_by("username")
+    serializer_class = UserSerializer
+    permission_classes = [IsAdminUser]
+    http_method_names = ["get", "post", "patch", "put", "head", "options"]
