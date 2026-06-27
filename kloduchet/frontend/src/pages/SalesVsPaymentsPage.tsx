@@ -7,18 +7,26 @@ export default function SalesVsPaymentsPage() {
   const [rows, setRows] = useState<SalesVsPaymentsRow[]>([]);
   const [disclaimer, setDisclaimer] = useState("");
   const [loading, setLoading] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
-    api.get<Organization[]>("/organizations/").then((res) => setOrganizations(res.data));
+    api.get<Organization[]>("/organizations/?is_active=true").then((res) => setOrganizations(res.data));
   }, []);
+
+  function buildParams() {
+    const params = new URLSearchParams();
+    selectedOrgs.forEach((id) => params.append("organization", id));
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    return params;
+  }
 
   function load() {
     setLoading(true);
-    const params = new URLSearchParams();
-    selectedOrgs.forEach((id) => params.append("organization", id));
     api
       .get<{ rows: SalesVsPaymentsRow[]; disclaimer: string }>(
-        `/analytics/sales-vs-payments?${params.toString()}`
+        `/analytics/sales-vs-payments?${buildParams().toString()}`
       )
       .then((res) => {
         setRows(res.data.rows);
@@ -27,12 +35,10 @@ export default function SalesVsPaymentsPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, [selectedOrgs]);
+  useEffect(load, [selectedOrgs, dateFrom, dateTo]);
 
   function exportXlsx() {
-    const params = new URLSearchParams();
-    selectedOrgs.forEach((id) => params.append("organization", id));
-    window.open(`/api/exports/sales-vs-payments?${params.toString()}`, "_blank");
+    window.open(`/api/exports/sales-vs-payments?${buildParams().toString()}`, "_blank");
   }
 
   const totalSales = rows.reduce((sum, r) => sum + Number(r.sales_total), 0);
@@ -61,6 +67,14 @@ export default function SalesVsPaymentsPage() {
             ))}
           </select>
           <span className="hint">Ничего не выбрано = все организации</span>
+        </label>
+        <label>
+          С даты
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+        <label>
+          По дату
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
         </label>
         <button onClick={exportXlsx}>Экспорт в Excel</button>
       </div>

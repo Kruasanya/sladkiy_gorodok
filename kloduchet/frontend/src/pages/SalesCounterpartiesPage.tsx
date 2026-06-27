@@ -15,19 +15,27 @@ export default function SalesCounterpartiesPage() {
   const [rows, setRows] = useState<CounterpartyRow[]>([]);
   const [amountTotal, setAmountTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
-    api.get<Organization[]>("/organizations/").then((res) => setOrganizations(res.data));
+    api.get<Organization[]>("/organizations/?is_active=true").then((res) => setOrganizations(res.data));
   }, []);
 
-  function load() {
-    setLoading(true);
+  function buildParams() {
     const params = new URLSearchParams();
     params.set("level", level);
     selectedOrgs.forEach((id) => params.append("organization", id));
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    return params;
+  }
+
+  function load() {
+    setLoading(true);
     api
       .get<{ rows: CounterpartyRow[]; amount_total: number }>(
-        `/analytics/sales/counterparties?${params.toString()}`
+        `/analytics/sales/counterparties?${buildParams().toString()}`
       )
       .then((res) => {
         setRows(res.data.rows);
@@ -36,13 +44,10 @@ export default function SalesCounterpartiesPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, [level, selectedOrgs]);
+  useEffect(load, [level, selectedOrgs, dateFrom, dateTo]);
 
   function exportXlsx() {
-    const params = new URLSearchParams();
-    params.set("level", level);
-    selectedOrgs.forEach((id) => params.append("organization", id));
-    window.open(`/api/exports/sales/counterparties?${params.toString()}`, "_blank");
+    window.open(`/api/exports/sales/counterparties?${buildParams().toString()}`, "_blank");
   }
 
   return (
@@ -77,6 +82,14 @@ export default function SalesCounterpartiesPage() {
             ))}
           </select>
         </label>
+        <label>
+          С даты
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+        <label>
+          По дату
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        </label>
         <button onClick={exportXlsx}>Экспорт в Excel</button>
       </div>
 
@@ -94,9 +107,11 @@ export default function SalesCounterpartiesPage() {
               <th>Сумма продаж</th>
               <th>Возвраты и корректировки</th>
               <th>Чистая сумма</th>
-              <th>Количество</th>
+              <th>Количество продаж</th>
+              <th>Количество возвратов</th>
               <th>Документов</th>
               <th>Доля в продажах</th>
+              <th>Доля возвратов</th>
             </tr>
           </thead>
           <tbody>
@@ -106,9 +121,11 @@ export default function SalesCounterpartiesPage() {
                 <td>{formatMoney(row.gross_sales_total)}</td>
                 <td>{formatMoney(row.returns_total)}</td>
                 <td>{formatMoney(row.amount_total)}</td>
-                <td>{Number(row.quantity_total).toLocaleString("ru-RU")}</td>
+                <td>{Number(row.gross_quantity_total).toLocaleString("ru-RU")}</td>
+                <td>{Number(row.returns_quantity_total).toLocaleString("ru-RU")}</td>
                 <td>{row.documents_count}</td>
                 <td>{row.share_of_total != null ? formatPercent(row.share_of_total) : "—"}</td>
+                <td>{row.returns_share != null ? formatPercent(row.returns_share) : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -117,7 +134,7 @@ export default function SalesCounterpartiesPage() {
               <td>Итого</td>
               <td colSpan={2}></td>
               <td>{formatMoney(amountTotal)}</td>
-              <td colSpan={3}></td>
+              <td colSpan={5}></td>
             </tr>
           </tfoot>
         </table>

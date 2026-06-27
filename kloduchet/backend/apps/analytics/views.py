@@ -3,7 +3,9 @@ from django.db.models.functions import TruncDay, TruncMonth, TruncWeek
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.banking import cashflow_adapter
 from apps.catalog.models import ProductReference
+from apps.organizations.scoping import TestClientObfuscationMixin, scoped_organization_ids
 from apps.payments.models import PaymentRecord
 from apps.sales.models import SaleRecord
 
@@ -23,6 +25,20 @@ GROSS_SALES_SUM = Sum(
         output_field=DecimalField(max_digits=18, decimal_places=2),
     )
 )
+RETURNS_QUANTITY_SUM = Sum(
+    Case(
+        When(sales_doc_type="Корректировка реализации", then="quantity"),
+        default=0,
+        output_field=DecimalField(max_digits=18, decimal_places=2),
+    )
+)
+GROSS_QUANTITY_SUM = Sum(
+    Case(
+        When(~Q(sales_doc_type="Корректировка реализации"), then="quantity"),
+        default=0,
+        output_field=DecimalField(max_digits=18, decimal_places=2),
+    )
+)
 
 SALES_VS_PAYMENTS_DISCLAIMER = (
     "Показатель является сравнением продаж и оплат за выбранный период. Он не учитывает "
@@ -37,9 +53,10 @@ TRUNC_BY_GROUP = {
 
 
 def _filtered_queryset(request):
-    qs = SaleRecord.objects.all()
+    qs = SaleRecord.objects.filter(organization__is_active=True)
 
-    organizations = request.query_params.getlist("organization")
+    scoped = scoped_organization_ids(request)
+    organizations = scoped if scoped is not None else request.query_params.getlist("organization")
     if organizations:
         qs = qs.filter(organization_id__in=organizations)
 
@@ -58,9 +75,9 @@ def _filtered_queryset(request):
     if nomenclature:
         qs = qs.filter(nomenclature__icontains=nomenclature)
 
-    display_name = request.query_params.get("display_name")
-    if display_name:
-        raw_values = ProductReference.objects.filter(display_name=display_name).values_list(
+    display_names = request.query_params.getlist("display_name")
+    if display_names:
+        raw_values = ProductReference.objects.filter(display_name__in=display_names).values_list(
             "nomenclature_raw", flat=True
         )
         qs = qs.filter(nomenclature__in=list(raw_values))
@@ -72,7 +89,7 @@ def _filtered_queryset(request):
     return qs
 
 
-class SalesTimelineView(APIView):
+class SalesTimelineView(TestClientObfuscationMixin, APIView):
     def get(self, request):
         group = request.query_params.get("group", "month")
         trunc = TRUNC_BY_GROUP.get(group, TruncMonth)
@@ -110,7 +127,7 @@ class SalesTimelineView(APIView):
         )
 
 
-class SalesProductsView(APIView):
+class SalesProductsView(TestClientObfuscationMixin, APIView):
     def get(self, request):
         qs = _filtered_queryset(request)
         total_amount = qs.aggregate(total=Sum("amount"))["total"] or 0
@@ -125,6 +142,8 @@ class SalesProductsView(APIView):
                 returns_total=RETURNS_SUM,
                 amount_total=Sum("amount"),
                 quantity_total=Sum("quantity"),
+                gross_quantity_total=GROSS_QUANTITY_SUM,
+                returns_quantity_total=RETURNS_QUANTITY_SUM,
             )
             .order_by("-amount_total")
         )
@@ -133,22 +152,29 @@ class SalesProductsView(APIView):
         for row in rows:
             quantity = row["quantity_total"] or 0
             amount = row["amount_total"] or 0
+            gross_sales_total = row["gross_sales_total"] or 0
+            returns_total = row["returns_total"] or 0
             data.append(
                 {
                     "nomenclature": row["nomenclature"],
                     "display_name": display_name_by_raw.get(row["nomenclature"]),
-                    "gross_sales_total": row["gross_sales_total"] or 0,
-                    "returns_total": row["returns_total"] or 0,
+                    "gross_sales_total": gross_sales_total,
+                    "returns_total": returns_total,
                     "amount_total": amount,
                     "quantity_total": quantity,
+                    "gross_quantity_total": row["gross_quantity_total"] or 0,
+                    "returns_quantity_total": row["returns_quantity_total"] or 0,
                     "average_price": float(amount) / float(quantity) if quantity else None,
                     "share_of_total": float(amount) / float(total_amount) if total_amount else None,
+                    "returns_share": abs(float(returns_total)) / float(gross_sales_total)
+                    if gross_sales_total
+                    else None,
                 }
             )
         return Response({"rows": data, "amount_total": total_amount})
 
 
-class SalesProductsTimeseriesView(APIView):
+class SalesProductsTimeseriesView(TestClientObfuscationMixin, APIView):
     """Графики продаж по товарам: динамика во времени с выбираемой агрегацией."""
 
     def get(self, request):
@@ -157,9 +183,23 @@ class SalesProductsTimeseriesView(APIView):
         metric = request.query_params.get("metric", "amount")
         if metric not in {"amount", "quantity"}:
             metric = "amount"
+        value_type = request.query_params.get("value_type", "net")
+        if value_type not in {"gross", "returns", "net"}:
+            value_type = "net"
         dimension = request.query_params.get("dimension", "display_name")
 
         qs = _filtered_queryset(request)
+
+        active_nomenclature = ProductReference.objects.filter(is_active=True).values_list(
+            "nomenclature_raw", flat=True
+        )
+        qs = qs.filter(nomenclature__in=list(active_nomenclature))
+
+        if value_type == "gross":
+            qs = qs.exclude(sales_doc_type="Корректировка реализации")
+        elif value_type == "returns":
+            qs = qs.filter(sales_doc_type="Корректировка реализации")
+
         display_name_by_raw = dict(
             ProductReference.objects.values_list("nomenclature_raw", "display_name")
         )
@@ -192,10 +232,18 @@ class SalesProductsTimeseriesView(APIView):
             for name, values in series.items()
         ]
 
-        return Response({"group": group, "metric": metric, "dimension": dimension, "series": result})
+        return Response(
+            {
+                "group": group,
+                "metric": metric,
+                "value_type": value_type,
+                "dimension": dimension,
+                "series": result,
+            }
+        )
 
 
-class SalesCounterpartiesView(APIView):
+class SalesCounterpartiesView(TestClientObfuscationMixin, APIView):
     def get(self, request):
         level = request.query_params.get("level", "legal_entity")
         if level not in {"legal_entity", "brand", "counterparty_raw", "contract_number"}:
@@ -211,6 +259,8 @@ class SalesCounterpartiesView(APIView):
                 returns_total=RETURNS_SUM,
                 amount_total=Sum("amount"),
                 quantity_total=Sum("quantity"),
+                gross_quantity_total=GROSS_QUANTITY_SUM,
+                returns_quantity_total=RETURNS_QUANTITY_SUM,
                 documents_count=Count("sales_doc_number", distinct=True),
             )
             .order_by("-amount_total")
@@ -219,24 +269,32 @@ class SalesCounterpartiesView(APIView):
         data = []
         for row in rows:
             amount = row["amount_total"] or 0
+            gross_sales_total = row["gross_sales_total"] or 0
+            returns_total = row["returns_total"] or 0
             data.append(
                 {
                     "key": row[level],
-                    "gross_sales_total": row["gross_sales_total"] or 0,
-                    "returns_total": row["returns_total"] or 0,
+                    "gross_sales_total": gross_sales_total,
+                    "returns_total": returns_total,
                     "amount_total": amount,
                     "quantity_total": row["quantity_total"] or 0,
+                    "gross_quantity_total": row["gross_quantity_total"] or 0,
+                    "returns_quantity_total": row["returns_quantity_total"] or 0,
                     "documents_count": row["documents_count"] or 0,
                     "share_of_total": float(amount) / float(total_amount) if total_amount else None,
+                    "returns_share": abs(float(returns_total)) / float(gross_sales_total)
+                    if gross_sales_total
+                    else None,
                 }
             )
         return Response({"level": level, "rows": data, "amount_total": total_amount})
 
 
 def _filtered_payments_queryset(request):
-    qs = PaymentRecord.objects.all()
+    qs = PaymentRecord.objects.filter(organization__is_active=True)
 
-    organizations = request.query_params.getlist("organization")
+    scoped = scoped_organization_ids(request)
+    organizations = scoped if scoped is not None else request.query_params.getlist("organization")
     if organizations:
         qs = qs.filter(organization_id__in=organizations)
 
@@ -258,7 +316,7 @@ def _filtered_payments_queryset(request):
     return qs
 
 
-class SalesVsPaymentsView(APIView):
+class SalesVsPaymentsView(TestClientObfuscationMixin, APIView):
     """Раздел 12.5 tech_spec.md — агрегированное сравнение продаж и оплат."""
 
     def get(self, request):
@@ -314,7 +372,37 @@ class SalesVsPaymentsView(APIView):
         return Response({"rows": rows, "disclaimer": SALES_VS_PAYMENTS_DISCLAIMER})
 
 
-class SaleRecordDetailView(APIView):
+MIN_CASHFLOW_HORIZON_DAYS = 1
+MAX_CASHFLOW_HORIZON_DAYS = 90
+
+
+class CashFlowForecastView(TestClientObfuscationMixin, APIView):
+    """Раздел «Бухгалтерия → Cash Flow»: фактический ДДС и прогноз модели Cash Flow."""
+
+    cashflow_response = True
+
+    def get(self, request):
+        scoped = scoped_organization_ids(request)
+        organization_ids = scoped if scoped is not None else (request.query_params.getlist("organization") or None)
+
+        try:
+            horizon_days = int(request.query_params.get("horizon_days", 30))
+        except ValueError:
+            horizon_days = 30
+        horizon_days = max(MIN_CASHFLOW_HORIZON_DAYS, min(horizon_days, MAX_CASHFLOW_HORIZON_DAYS))
+
+        try:
+            result = cashflow_adapter.forecast_cashflow(organization_ids, horizon_days)
+        except FileNotFoundError:
+            return Response(
+                {"detail": "Модель Cash Flow не обучена. Запустите run_cashflow_training.py."},
+                status=503,
+            )
+
+        return Response({"horizon_days": horizon_days, **result})
+
+
+class SaleRecordDetailView(TestClientObfuscationMixin, APIView):
     def get(self, request, pk):
         try:
             record = SaleRecord.objects.select_related("organization", "import_batch").get(pk=pk)
@@ -343,7 +431,7 @@ class SaleRecordDetailView(APIView):
         )
 
 
-class PaymentRecordDetailView(APIView):
+class PaymentRecordDetailView(TestClientObfuscationMixin, APIView):
     def get(self, request, pk):
         try:
             record = PaymentRecord.objects.select_related("organization", "import_batch").get(pk=pk)

@@ -19,4 +19,4 @@ class ProductReferenceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["nomenclature_raw", "first_sale_date", "last_sale_date", "created_at", "updated_at"]
+        read_only_fields = ["first_sale_date", "last_sale_date", "created_at", "updated_at"]

@@ -2,6 +2,7 @@ from django.urls import path
 
 from .ledger import LedgerPaymentsView, LedgerReceiptsView, LedgerSalesView
 from .views import (
+    CashFlowForecastView,
     PaymentRecordDetailView,
     SaleRecordDetailView,
     SalesCounterpartiesView,
@@ -12,6 +13,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("cashflow", CashFlowForecastView.as_view(), name="cashflow-forecast"),
     path("sales/timeline", SalesTimelineView.as_view(), name="sales-timeline"),
     path("sales/products", SalesProductsView.as_view(), name="sales-products"),
     path(

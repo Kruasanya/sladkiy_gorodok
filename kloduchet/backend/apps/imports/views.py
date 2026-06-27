@@ -47,6 +47,12 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
         except Organization.DoesNotExist:
             return Response({"detail": "Организация не найдена."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if not organization.is_active:
+            return Response(
+                {"detail": "Организация в архиве — загрузка данных недоступна."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         stored_file = services.save_uploaded_file(data["file"])
         batch = services.create_import_batch(
             organization=organization,

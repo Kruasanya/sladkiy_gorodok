@@ -48,8 +48,8 @@
 }
 \ProcessKeyvalOptions*
 
-\def\@typeString{Выпускная квалификационная работа}
-\def\@facultyString{Факультет физики}
+\def\@typeString{Курсовая работа}
+\def\@facultyString{Факультет компьютерных наук}
 \def\@specName{Физика}
 \def\@specCode{03.03.02 Физика}
 \def\@year{\the\year{}}
@@ -71,6 +71,40 @@
   \def\@supervisorAcademic{#2}
   \def\@supervisorName{#3}
 }
+\def\@titleRu{}
+\def\@titleEn{}
+\def\@students{}
+\def\@program{}
+\newcommand{\TitleRu}[1]{\def\@titleRu{#1}}
+\newcommand{\TitleEn}[1]{\def\@titleEn{#1}}
+\newcommand{\Program}[1]{\def\@program{#1}}
+\newcommand{\Faculty}[1]{\def\@facultyString{#1}}
+\newcommand{\WorkType}[1]{\def\@typeString{#1}}
+
+\newcommand{\AddStudent}[1]{%
+  \g@addto@macro\@students{%
+    #1\\[1mm]
+    \rule{0.6\textwidth}{0.4pt}\\[1mm]
+    {\footnotesize (Ф.И.О., подпись)}\\[6mm]
+  }%
+}
+
+\newcommand{\@supervisorDescr}{%
+  \def\@descr{}%
+  \def\@sep{}%
+  \ifx\@supervisorTitle\@empty\else
+    \edef\@descr{\@descr\@sep\@supervisorTitle}%
+    \def\@sep{, }%
+  \fi
+  \ifx\@supervisorAcademic\@empty\else
+    \edef\@descr{\@descr\@sep\@supervisorAcademic}%
+    \def\@sep{, }%
+  \fi
+  \ifx\@supervisorName\@empty\else
+    \edef\@descr{\@descr\@sep\@supervisorName}%
+  \fi
+  \nohyphens{\@descr}%
+}
 \newcommand{\reviewer}[2]{
   \def\@reviewerTitle{#1}
   \def\@reviewerName{#2}
@@ -86,46 +120,52 @@
 }
 
 \newcommand{\UnivercityString}{
-  \textbf{Национальный исследовательский университет\\
-  Высшая школа экономики}
+  Федеральное государственное автономное образовательное учреждение\\
+  высшего образования «Национальный исследовательский университет\\
+  «Высшая школа экономики»
 }
 
 \newcommand\KRTitle{
   \UnivercityString
 
+  \vspace{8mm}
+
+  \@facultyString\\
+  \@program
+
+  \vfill
   \vfill
 
-  \@facultyString
+  \textbf{\MakeUppercase{\@typeString}}
 
   \vfill
   \vfill
+
+  \begin{flushleft}
+    На тему (рус): \nohyphens{\@titleRu}
+
+    \vspace{4mm}
+    На тему (англ.): \nohyphens{\@titleEn}
+  \end{flushleft}
+
+  \vfill
   \vfill
 
-  \@author
+  \begin{flushleft}
+    Студент
 
-  \vspace{3mm}
+    \vspace{6mm}
+    \@students
 
-  \textbf{\MakeUppercase{\@title}}
-  
-  \vspace{3mm}
+    \vspace{4mm}
 
-  \@typeString
+    Руководитель КР
 
-  по направлению подготовки \underline{\@specCode} \\
-  образовательная программа \underline{\@specName}
-
-  \vspace{100mm}
-
-  \hfill
-  \begin{minipage}[t]{0.4\textwidth}
-    \begin{flushleft}
-      Научный руководитель \\
-      \nohyphens{\@supervisorTitle}, \nohyphens{\@supervisorAcademic}
-
-      \vspace{5mm}
-      \@supervisorName
-    \end{flushleft}
-  \end{minipage}
+    \vspace{6mm}
+    \@supervisorDescr\\[1mm]
+    \rule{0.6\textwidth}{0.4pt}\\[1mm]
+    {\footnotesize (должность, звание, Ф.И.О, подпись)}
+  \end{flushleft}
 
   \vfill
   \vfill

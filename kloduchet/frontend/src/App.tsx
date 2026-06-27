@@ -11,6 +11,7 @@ import SalesCounterpartiesPage from "./pages/SalesCounterpartiesPage";
 import SalesVsPaymentsPage from "./pages/SalesVsPaymentsPage";
 import LedgerPage from "./pages/LedgerPage";
 import CatalogPage from "./pages/CatalogPage";
+import CashFlowPage from "./pages/CashFlowPage";
 
 export default function App() {
   const [user, setUser] = useState<{ username: string } | null | "loading">("loading");
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/ledger/sales" element={<LedgerPage ledgerType="sales" />} />
         <Route path="/ledger/receipts" element={<LedgerPage ledgerType="receipts" />} />
         <Route path="/ledger/payments" element={<LedgerPage ledgerType="payments" />} />
+        <Route path="/ledger/cashflow" element={<CashFlowPage />} />
         <Route path="/sales/timeline" element={<SalesTimelinePage />} />
         <Route path="/sales/products" element={<SalesProductsPage />} />
         <Route path="/sales/counterparties" element={<SalesCounterpartiesPage />} />

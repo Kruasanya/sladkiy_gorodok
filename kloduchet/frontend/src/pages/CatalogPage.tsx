@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 
 export interface ProductReference {
@@ -16,6 +16,9 @@ export interface ProductReference {
 export default function CatalogPage() {
   const [products, setProducts] = useState<ProductReference[]>([]);
   const [loading, setLoading] = useState(false);
+  const [newRawName, setNewRawName] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -41,13 +44,46 @@ export default function CatalogPage() {
     });
   }
 
+  async function handleCreate(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      await api.post("/catalog/products/", {
+        nomenclature_raw: newRawName,
+        display_name: newDisplayName,
+      });
+      setNewRawName("");
+      setNewDisplayName("");
+      load();
+    } catch (err: any) {
+      setError(err?.response?.data?.nomenclature_raw?.[0] ?? err?.response?.data?.detail ?? "Не удалось добавить товар.");
+    }
+  }
+
   return (
     <div>
       <h1>Справочники — товары</h1>
       <p className="hint">
         Связывает сырые названия номенклатуры из продаж с общим названием товара, актуальностью,
-        сроком годности и себестоимостью.
+        сроком годности и себестоимостью. При загрузке продаж новая номенклатура добавляется сюда
+        автоматически.
       </p>
+
+      <form className="inline-form" onSubmit={handleCreate}>
+        <input
+          placeholder="Номенклатура (как в 1С)"
+          value={newRawName}
+          onChange={(e) => setNewRawName(e.target.value)}
+          required
+        />
+        <input
+          placeholder="Общее название"
+          value={newDisplayName}
+          onChange={(e) => setNewDisplayName(e.target.value)}
+        />
+        <button type="submit">Добавить товар</button>
+      </form>
+      {error && <div className="error-box">{error}</div>}
 
       {loading ? (
         <p>Загрузка…</p>

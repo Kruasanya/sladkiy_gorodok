@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .row_validation import validate_rows
+
 _PIPELINE_PATH = (
     Path(__file__).resolve().parents[3]
     / "Данные"
@@ -87,8 +89,14 @@ def process_file(source_path: Path, output_dir: Path) -> ProcessResult:
                 f"{future_count} строк с датой продажи в будущем относительно момента загрузки."
             )
 
-        if df["amount"].isna().any() or not df["amount"].abs().lt(float("inf")).all():
-            errors.append("В сумме продаж обнаружены некорректные значения (NaN/Inf).")
+        errors.extend(
+            validate_rows(
+                df,
+                required_fields=("nomenclature",),
+                amount_fields=("amount",),
+                date_fields=("sale_date",),
+            )
+        )
 
     parquet_path = output_dir / f"{source_path.stem}.parquet"
     if not df.empty:

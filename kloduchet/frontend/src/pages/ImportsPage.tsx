@@ -25,7 +25,7 @@ export default function ImportsPage() {
   }
 
   useEffect(() => {
-    api.get<Organization[]>("/organizations/").then((res) => {
+    api.get<Organization[]>("/organizations/?is_active=true").then((res) => {
       setOrganizations(res.data);
       if (res.data.length > 0) setOrganization(res.data[0].id);
     });

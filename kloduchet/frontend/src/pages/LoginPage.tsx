@@ -28,7 +28,7 @@ export default function LoginPage({
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
-        <h1>КлодУчет</h1>
+        <h1>СкладУчет</h1>
         <p className="muted">Вход в систему управленческого учета</p>
         <label>
           Логин

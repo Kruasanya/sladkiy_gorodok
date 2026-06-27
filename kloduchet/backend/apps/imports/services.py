@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.banking.models import BankTransaction
+from apps.catalog.models import ProductReference
 from apps.payments.models import PaymentRecord
 from apps.sales.models import SaleRecord
 
@@ -130,6 +131,24 @@ def _build_bank_records(batch, df):
         )
         for row in df.to_dict("records")
     ]
+
+
+def _sync_product_catalog(df):
+    """Создает в справочнике товаров записи для новой номенклатуры продаж."""
+    nomenclature_values = {value for value in df["nomenclature"].dropna().unique() if str(value).strip()}
+    if not nomenclature_values:
+        return
+
+    existing = set(
+        ProductReference.objects.filter(nomenclature_raw__in=nomenclature_values).values_list(
+            "nomenclature_raw", flat=True
+        )
+    )
+    new_values = nomenclature_values - existing
+    if new_values:
+        ProductReference.objects.bulk_create(
+            [ProductReference(nomenclature_raw=value) for value in new_values]
+        )
 
 
 def _amount_total_for(data_type, result):
@@ -260,6 +279,9 @@ def run_import(batch: ImportBatch) -> ImportBatch:
                 model = type(records[0]) if records else None
                 if model is not None:
                     model.objects.bulk_create(records, batch_size=1000)
+
+                if batch.data_type == "sales":
+                    _sync_product_catalog(df)
 
                 batch.row_count = len(records)
                 batch.amount_total = amount_total

@@ -65,8 +65,11 @@ export interface ProductRow {
   returns_total: number;
   amount_total: number;
   quantity_total: number;
+  gross_quantity_total: number;
+  returns_quantity_total: number;
   average_price: number | null;
   share_of_total: number | null;
+  returns_share: number | null;
 }
 
 export interface CounterpartyRow {
@@ -75,8 +78,11 @@ export interface CounterpartyRow {
   returns_total: number;
   amount_total: number;
   quantity_total: number;
+  gross_quantity_total: number;
+  returns_quantity_total: number;
   documents_count: number;
   share_of_total: number | null;
+  returns_share: number | null;
 }
 
 export interface SalesVsPaymentsRow {
@@ -87,4 +93,24 @@ export interface SalesVsPaymentsRow {
   payments_total: number;
   difference: number;
   payment_share: number | null;
+}
+
+export interface CashFlowActualRow {
+  date: string;
+  inflow: number;
+  outflow: number;
+  net_cash_flow: number;
+}
+
+export interface CashFlowForecastRow {
+  date: string;
+  predicted_inflow: number;
+  predicted_outflow: number;
+  predicted_net_cash_flow: number;
+}
+
+export interface CashFlowResponse {
+  horizon_days: number;
+  actual: CashFlowActualRow[];
+  forecast: CashFlowForecastRow[];
 }

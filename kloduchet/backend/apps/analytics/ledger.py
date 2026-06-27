@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.banking.models import BankTransaction
+from apps.organizations.scoping import TestClientObfuscationMixin, scoped_organization_ids
 from apps.payments.models import PaymentRecord
 from apps.sales.models import SaleRecord
 
@@ -103,11 +104,12 @@ PAYMENTS_CONFIG = LedgerConfig(
 
 
 def _filtered_queryset(config: LedgerConfig, request):
-    qs = config.model.objects.all()
+    qs = config.model.objects.filter(organization__is_active=True)
     if config.model is BankTransaction:
         qs = qs.filter(direction="credit")
 
-    organizations = request.query_params.getlist("organization")
+    scoped = scoped_organization_ids(request)
+    organizations = scoped if scoped is not None else request.query_params.getlist("organization")
     if organizations:
         qs = qs.filter(organization_id__in=organizations)
 
@@ -126,7 +128,7 @@ def _filtered_queryset(config: LedgerConfig, request):
     return qs
 
 
-class LedgerView(APIView):
+class LedgerView(TestClientObfuscationMixin, APIView):
     config: LedgerConfig
 
     def get(self, request):

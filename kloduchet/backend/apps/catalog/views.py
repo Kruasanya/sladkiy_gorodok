@@ -7,4 +7,4 @@ from .serializers import ProductReferenceSerializer
 class ProductReferenceViewSet(ModelViewSet):
     queryset = ProductReference.objects.all()
     serializer_class = ProductReferenceSerializer
-    http_method_names = ["get", "patch", "put", "head", "options"]
+    http_method_names = ["get", "post", "patch", "put", "head", "options"]

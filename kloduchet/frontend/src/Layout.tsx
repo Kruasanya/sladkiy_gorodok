@@ -9,6 +9,7 @@ const SECTIONS = [
       { to: "/ledger/sales", label: "Продажи" },
       { to: "/ledger/receipts", label: "Приходы" },
       { to: "/ledger/payments", label: "Оплаты" },
+      { to: "/ledger/cashflow", label: "Cash Flow" },
     ],
   },
   {
@@ -49,7 +50,7 @@ export default function Layout({
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="brand">КлодУчет</div>
+        <div className="brand">СкладУчет</div>
         <nav className="section-nav">
           {SECTIONS.map((section) => (
             <NavLink

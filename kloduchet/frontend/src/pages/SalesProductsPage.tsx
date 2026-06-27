@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { api, type Organization, type ProductRow } from "../api";
+import { formatMoney, formatMoneyCompact } from "../utils/money";
 import type { ProductReference } from "./CatalogPage";
 
 interface TimeseriesPoint {
@@ -23,18 +24,27 @@ interface TimeseriesSeries {
 interface TimeseriesResponse {
   group: string;
   metric: string;
+  value_type: string;
   dimension: string;
   series: TimeseriesSeries[];
 }
 
 const COLORS = ["#3461ff", "#ff7a45", "#36b37e", "#bf2600", "#6554c0", "#00b8d9", "#ffab00"];
 
+const VALUE_TYPES = [
+  { value: "net", label: "Чистая сумма" },
+  { value: "gross", label: "Сумма продаж" },
+  { value: "returns", label: "Возвраты и корректировки" },
+];
+
 export default function SalesProductsPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
   const [products, setProducts] = useState<ProductReference[]>([]);
   const [nomenclature, setNomenclature] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [selectedDisplayNames, setSelectedDisplayNames] = useState<string[]>([]);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [amountTotal, setAmountTotal] = useState(0);
@@ -42,11 +52,12 @@ export default function SalesProductsPage() {
 
   const [chartGroup, setChartGroup] = useState("month");
   const [chartMetric, setChartMetric] = useState("amount");
+  const [chartValueType, setChartValueType] = useState("net");
   const [chartDimension, setChartDimension] = useState("display_name");
   const [timeseries, setTimeseries] = useState<TimeseriesResponse | null>(null);
 
   useEffect(() => {
-    api.get<Organization[]>("/organizations/").then((res) => setOrganizations(res.data));
+    api.get<Organization[]>("/organizations/?is_active=true").then((res) => setOrganizations(res.data));
     api.get<ProductReference[]>("/catalog/products/").then((res) => setProducts(res.data));
   }, []);
 
@@ -59,7 +70,9 @@ export default function SalesProductsPage() {
     const params = new URLSearchParams();
     selectedOrgs.forEach((id) => params.append("organization", id));
     if (nomenclature) params.set("nomenclature", nomenclature);
-    if (displayName) params.set("display_name", displayName);
+    selectedDisplayNames.forEach((name) => params.append("display_name", name));
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     return params;
   }
 
@@ -75,18 +88,19 @@ export default function SalesProductsPage() {
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedOrgs, nomenclature, displayName]);
+  }, [selectedOrgs, nomenclature, selectedDisplayNames, dateFrom, dateTo]);
 
   useEffect(() => {
     const params = buildParams();
     params.set("group", chartGroup);
     params.set("metric", chartMetric);
+    params.set("value_type", chartValueType);
     params.set("dimension", chartDimension);
     api
       .get<TimeseriesResponse>(`/analytics/sales/products/timeseries?${params.toString()}`)
       .then((res) => setTimeseries(res.data));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedOrgs, nomenclature, displayName, chartGroup, chartMetric, chartDimension]);
+  }, [selectedOrgs, nomenclature, selectedDisplayNames, dateFrom, dateTo, chartGroup, chartMetric, chartValueType, chartDimension]);
 
   const chartData = useMemo(() => {
     if (!timeseries) return [];
@@ -102,6 +116,10 @@ export default function SalesProductsPage() {
 
   function exportXlsx() {
     window.open(`/api/exports/sales/products?${buildParams().toString()}`, "_blank");
+  }
+
+  function formatChartValue(v: number) {
+    return chartMetric === "amount" ? formatMoney(v) : Number(v).toLocaleString("ru-RU");
   }
 
   return (
@@ -136,20 +154,35 @@ export default function SalesProductsPage() {
           />
         </label>
         <label>
-          Общее название
-          <select value={displayName} onChange={(e) => setDisplayName(e.target.value)}>
-            <option value="">Все товары</option>
+          Товары
+          <select
+            multiple
+            value={selectedDisplayNames}
+            onChange={(e) =>
+              setSelectedDisplayNames(Array.from(e.target.selectedOptions, (o) => o.value))
+            }
+          >
             {displayNames.map((name) => (
-              <option key={name} value={name}>
+              <option key={name} value={name as string}>
                 {name}
               </option>
             ))}
           </select>
+          <span className="hint">Ничего не выбрано = все товары</span>
+        </label>
+        <label>
+          С даты
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+        <label>
+          По дату
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
         </label>
         <button onClick={exportXlsx}>Экспорт в Excel</button>
       </div>
 
       <h2>Динамика продаж</h2>
+      <p className="hint">На графике показаны только активные товары из справочника.</p>
       <div className="filters-bar">
         <label>
           Период
@@ -167,6 +200,16 @@ export default function SalesProductsPage() {
           </select>
         </label>
         <label>
+          Показатель
+          <select value={chartValueType} onChange={(e) => setChartValueType(e.target.value)}>
+            {VALUE_TYPES.map((vt) => (
+              <option key={vt.value} value={vt.value}>
+                {vt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Разрез
           <select value={chartDimension} onChange={(e) => setChartDimension(e.target.value)}>
             <option value="display_name">По общему названию</option>
@@ -176,13 +219,18 @@ export default function SalesProductsPage() {
       </div>
 
       {timeseries && timeseries.series.length > 0 ? (
-        <div style={{ width: "100%", height: 360 }}>
-          <ResponsiveContainer>
+        <div className="chart-box">
+          <ResponsiveContainer width="100%" height={360}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="period" />
-              <YAxis />
-              <Tooltip />
+              <YAxis
+                width={90}
+                tickFormatter={(v) =>
+                  chartMetric === "amount" ? formatMoneyCompact(Number(v)) : Number(v).toLocaleString("ru-RU")
+                }
+              />
+              <Tooltip formatter={(value) => formatChartValue(Number(value))} />
               <Legend />
               {timeseries.series.map((s, i) => (
                 <Line
@@ -215,9 +263,11 @@ export default function SalesProductsPage() {
               <th>Сумма продаж</th>
               <th>Возвраты и корректировки</th>
               <th>Чистая сумма</th>
-              <th>Количество</th>
+              <th>Количество продаж</th>
+              <th>Количество возвратов</th>
               <th>Средняя цена</th>
               <th>Доля в продажах</th>
+              <th>Доля возвратов</th>
             </tr>
           </thead>
           <tbody>
@@ -228,9 +278,11 @@ export default function SalesProductsPage() {
                 <td>{formatMoney(row.gross_sales_total)}</td>
                 <td>{formatMoney(row.returns_total)}</td>
                 <td>{formatMoney(row.amount_total)}</td>
-                <td>{Number(row.quantity_total).toLocaleString("ru-RU")}</td>
+                <td>{Number(row.gross_quantity_total).toLocaleString("ru-RU")}</td>
+                <td>{Number(row.returns_quantity_total).toLocaleString("ru-RU")}</td>
                 <td>{row.average_price != null ? formatMoney(row.average_price) : "—"}</td>
                 <td>{row.share_of_total != null ? formatPercent(row.share_of_total) : "—"}</td>
+                <td>{row.returns_share != null ? formatPercent(row.returns_share) : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -239,17 +291,13 @@ export default function SalesProductsPage() {
               <td colSpan={2}>Итого</td>
               <td colSpan={2}></td>
               <td>{formatMoney(amountTotal)}</td>
-              <td colSpan={3}></td>
+              <td colSpan={5}></td>
             </tr>
           </tfoot>
         </table>
       )}
     </div>
   );
-}
-
-function formatMoney(value: number) {
-  return Number(value).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatPercent(value: number) {

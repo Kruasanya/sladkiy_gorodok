@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .row_validation import validate_rows
+
 _PIPELINE_PATH = (
     Path(__file__).resolve().parents[3]
     / "Данные"
@@ -93,6 +95,14 @@ def process_file(source_path: Path, output_dir: Path) -> ProcessResult:
 
         if not (df["amount"] == (df["credit"] - df["debit"])).all():
             errors.append("Обнаружены строки, где amount != credit - debit.")
+
+        errors.extend(
+            validate_rows(
+                df,
+                amount_fields=("amount", "debit", "credit"),
+                date_fields=("operation_date",),
+            )
+        )
 
     parquet_path = output_dir / f"{source_path.stem}.parquet"
     if not df.empty and not errors:

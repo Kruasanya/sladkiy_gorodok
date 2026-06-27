@@ -1,39 +1,99 @@
-\documentclass{coursework}
+\documentclass{HSEUniversity}
+\usepackage{hyperref}
+\hypersetup{
+    pdfauthor={Есипёнок Павел Денисович, Мадоян Александр Мартинович},
+    pdftitle={Применение методов машинного обучения в задачах малого и среднего бизнеса},
+    citecolor=black,
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    pdfpagemode=FullScreen,
+}
 
-\usepackage[
-  backend=biber,
-  style=gost-numeric,
-  sorting=none
-]{biblatex}
+\Program{Магистерская программа «Финансовые технологии и анализ данных»}
+\TitleRu{Применение методов машинного обучения в задачах малого и среднего бизнеса}
+\TitleEn{Application of Machine Learning Methods in Small and Medium-Sized Businesses}
+\AddStudent{Есипёнок Павел Денисович}
+\AddStudent{Мадоян Александр Мартинович}
+\supervisor{}{}{Васильев Роман Александрович}
+
+\usepackage{amsmath}
+\usepackage{euscript}
+\usepackage{amssymb}
+\usepackage{amscd}
+\usepackage{amsthm}
+\usepackage{physics}
+\usepackage{braket}
+\usepackage{textcomp}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{1.0,1.0,1.0}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+\lstdefinestyle{pythonStyle}{
+    style=mystyle,
+    language=Python,
+}
 
 \addbibresource{references.bib}
 
+\usepackage{MnSymbol}
+\usepackage{verbatim}
+\usepackage{array}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{wrapfig}
+\usepackage{cancel}
+\usepackage{misccorr}
+\usepackage{indentfirst}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1, T2A]{fontenc}
+
+\textwidth=6.3in
+\textheight=9in
+\oddsidemargin=0in
+\topmargin=0in
+
+\renewcommand{\geq}{\geqslant}
+\renewcommand{\leq}{\leqslant}
+
 \begin{document}
+    \maketitle
+    \input{parts/Annotation.tex}
+    \tableofcontents{}
+    \newpage
 
-\courseworktitlepage
-  {Название образовательной организации}
-  {Кафедра / направление подготовки}
-  {Применение методов машинного обучения и больших языковых моделей для финансового и операционного анализа малого производственного бизнеса}
-  {ФИО студента}
-  {ФИО руководителя}
-  {Москва, 2026}
+    \input{parts/Chapter0.tex} %% 1. Введение
+    \input{parts/Chapter1.tex} %% 2. Загрузка данных
+    \input{parts/Chapter2.tex} %% 3. Финансовый аудит
+    \input{parts/Chapter3.tex} %% 4. Обучение моделей
+    \input{parts/Chapter4.tex} %% 5. CRM-система для упрощенного учета
+    \input{parts/Chapter5.tex} %% 6. Заключение
 
-\tableofcontents
-\clearpage
-
-\input{parts/introduction}
-\input{parts/chapter1}
-\input{parts/chapter2}
-\input{parts/chapter3}
-\input{parts/chapter4}
-\input{parts/chapter5}
-\input{parts/chapter6}
-\input{parts/conclusion}
-
-\nocite{*}
-\printbibliography
-
-\appendix
-\input{parts/appendix}
-
+    \printbibliography
+    \input{parts/Appendix.tex} %% Приложение
 \end{document}

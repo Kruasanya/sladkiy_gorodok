@@ -78,7 +78,7 @@ export default function LedgerPage({ ledgerType }: { ledgerType: LedgerType }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.get<Organization[]>("/organizations/").then((res) => setOrganizations(res.data));
+    api.get<Organization[]>("/organizations/?is_active=true").then((res) => setOrganizations(res.data));
   }, []);
 
   useEffect(() => {

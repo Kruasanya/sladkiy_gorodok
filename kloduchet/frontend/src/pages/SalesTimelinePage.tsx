@@ -3,22 +3,26 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { api, type Organization, type TimelineRow } from "../api";
+import { formatMoney, formatMoneyCompact } from "../utils/money";
 
 export default function SalesTimelinePage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
   const [group, setGroup] = useState("month");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [rows, setRows] = useState<TimelineRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.get<Organization[]>("/organizations/").then((res) => setOrganizations(res.data));
+    api.get<Organization[]>("/organizations/?is_active=true").then((res) => setOrganizations(res.data));
   }, []);
 
   function load() {
@@ -26,13 +30,15 @@ export default function SalesTimelinePage() {
     const params = new URLSearchParams();
     params.set("group", group);
     selectedOrgs.forEach((id) => params.append("organization", id));
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     api
       .get<{ rows: TimelineRow[] }>(`/analytics/sales/timeline?${params.toString()}`)
       .then((res) => setRows(res.data.rows))
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, [group, selectedOrgs]);
+  useEffect(load, [group, selectedOrgs, dateFrom, dateTo]);
 
   const totalAmount = rows.reduce((sum, r) => sum + Number(r.amount_total), 0);
   const totalGross = rows.reduce((sum, r) => sum + Number(r.gross_sales_total), 0);
@@ -43,6 +49,8 @@ export default function SalesTimelinePage() {
     const params = new URLSearchParams();
     params.set("group", group);
     selectedOrgs.forEach((id) => params.append("organization", id));
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     window.open(`/api/exports/sales/timeline?${params.toString()}`, "_blank");
   }
 
@@ -76,6 +84,14 @@ export default function SalesTimelinePage() {
             <option value="month">Месяц</option>
           </select>
         </label>
+        <label>
+          С даты
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+        <label>
+          По дату
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        </label>
         <button onClick={exportXlsx}>Экспорт в Excel</button>
       </div>
 
@@ -93,9 +109,11 @@ export default function SalesTimelinePage() {
               <BarChart data={rows.map((r) => ({ ...r, label: formatPeriod(r.period) }))}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
-                <YAxis />
+                <YAxis tickFormatter={(v) => formatMoneyCompact(Number(v))} width={90} />
                 <Tooltip formatter={(v) => formatMoney(Number(v))} />
-                <Bar dataKey="amount_total" fill="#3b6ea5" name="Сумма продаж" />
+                <Legend />
+                <Bar dataKey="gross_sales_total" fill="#3b6ea5" name="Продажи" />
+                <Bar dataKey="returns_total" fill="#c0392b" name="Возвраты и корректировки" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -143,8 +161,4 @@ export default function SalesTimelinePage() {
 function formatPeriod(value: string) {
   const [y, m, d] = value.split("-");
   return `${d}.${m}.${y}`;
-}
-
-function formatMoney(value: number) {
-  return Number(value).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
