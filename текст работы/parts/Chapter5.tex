@@ -1,3 +1,139 @@
-\section{Заключение}
-\label{ch:conclusion}
+\chapter{Собственная CRM-платформа}
 
+\section{Назначение и место приложения в проекте}
+
+Аудит, проведённый в предыдущих главах, опирается на выгрузки 1С и банковские выписки в формате Excel, разнородные по структуре между производственными площадками и периодами. Ручная сверка и пересчёт таких файлов из месяца в месяц не масштабируется и не позволяет получать управленческую отчётность регулярно, а не разово. Для решения этой проблемы в рамках проекта разработано собственное веб-приложение «СкладУчет» --- учётно-аналитическая платформа, автоматизирующая загрузку первичных данных (продажи, оплаты, банковские операции), их хранение в едином формате и построение управленческих отчётов, включая прогноз денежного потока.
+
+Приложение реализует первую очередь автоматизации: загрузку и нормализацию данных, базовые отчёты по продажам и оплатам, а также витрину cash flow, использующую прогнозные модели из главы~\ref{ch:ml} напрямую в интерфейсе. Полная функциональная и техническая спецификации приведены в \texttt{kloduchet/docs/specs/}; в этой главе описаны архитектура и реализованный функционал.
+
+\section{Архитектура приложения}
+
+Приложение построено по классической трёхзвенной схеме «браузер --- backend API --- база данных» с асинхронной обработкой тяжёлых операций (рисунок~\ref{fig:app_architecture}).
+
+\begin{itemize}
+  \item \textbf{Frontend} --- React 18 + TypeScript, сборка Vite. Взаимодействие с backend происходит через REST API; для аутентификации используются сессионные cookie и CSRF-токен, поэтому frontend и backend разворачиваются под одним origin (Vite в режиме разработки проксирует запросы \texttt{/api} на backend).
+  \item \textbf{Backend} --- Django + Django REST Framework. Код разделён на предметные приложения (Django apps): \texttt{organizations} (организации и пользователи), \texttt{imports} (загрузка и журнал пакетов выгрузок), \texttt{sales}, \texttt{payments}, \texttt{banking} (хранение нормализованных записей по трём типам данных), \texttt{catalog} (справочник товаров), \texttt{analytics} (отчёты и cash flow), \texttt{exports} (экспорт в Excel).
+  \item \textbf{Пайплайны обработки} --- слой адаптеров поверх уже существующих скриптов парсинга выгрузок 1С и банковских выписок (\texttt{Данные/Пайплайны обработки данных}), используемых в аудите. Backend не дублирует логику парсинга, а вызывает её через единый интерфейс адаптера, что обеспечивает согласованность между аналитикой аудита и приложением.
+  \item \textbf{Очередь задач} --- Celery + Redis. Загруженный файл обрабатывается асинхронно: HTTP-запрос только создаёт пакет загрузки и ставит задачу в очередь, воркер Celery выполняет парсинг и запись строк в базу, интерфейс опрашивает статус пакета.
+  \item \textbf{База данных} --- PostgreSQL в продуктивной конфигурации (в Docker Compose), SQLite --- в облегчённом локальном режиме для разработки без контейнеров; модель данных и бизнес-логика идентичны в обоих режимах.
+  \item \textbf{Инфраструктура} --- Docker Compose с пятью сервисами: \texttt{frontend}, \texttt{backend}, \texttt{worker}, \texttt{postgres}, \texttt{redis}; резервное копирование и восстановление реализованы отдельными скриптами (\texttt{scripts/backup.sh}, \texttt{scripts/restore.sh}), создающими дамп PostgreSQL и копию файлового хранилища с манифестом версии.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=8mm and 12mm,
+  box/.style={draw, rounded corners, align=center, minimum height=9mm, minimum width=28mm, font=\small, fill=blue!8},
+  proc/.style={draw, rounded corners, align=center, minimum height=9mm, minimum width=28mm, font=\small, fill=orange!10},
+  store/.style={draw, rounded corners, align=center, minimum height=9mm, minimum width=28mm, font=\small, fill=green!10},
+  grp/.style={draw, dashed, rounded corners, inner sep=4mm},
+  arr/.style={-Stealth, thick}
+]
+
+\node[box] (browser) {Браузер пользователя};
+\node[box, below=of browser] (frontend) {Frontend\\React + TypeScript (Vite)};
+\node[box, below=of frontend] (api) {Backend API\\Django + DRF};
+
+\node[proc, right=of api, xshift=10mm] (worker) {Worker\\Celery};
+\node[store, below=of worker] (redis) {Redis\\(очередь задач)};
+
+\node[proc, below=of api, yshift=-2mm] (pipelines) {Адаптеры пайплайнов\\(парсинг 1С / банка)};
+\node[store, below=of pipelines] (db) {PostgreSQL~/~SQLite};
+
+\draw[arr] (browser) -- (frontend) node[midway, right, font=\scriptsize] {HTTPS};
+\draw[arr] (frontend) -- (api) node[midway, right, font=\scriptsize] {REST API};
+\draw[arr] (api) -- (pipelines);
+\draw[arr] (pipelines) -- (db);
+\draw[arr] (api.east) -- (worker.west) node[midway, above, font=\scriptsize] {задача импорта};
+\draw[arr] (worker) -- (redis);
+\draw[arr] (worker) -- (pipelines.east) node[midway, below, font=\scriptsize, sloped] {запись строк};
+
+\begin{scope}[on background layer]
+\node[grp, fit=(frontend)(api)(worker)(redis)(pipelines)(db), label={[font=\scriptsize]above left:Docker Compose}] {};
+\end{scope}
+
+\end{tikzpicture}
+\caption{Архитектура приложения «СкладУчет»: frontend, backend API, асинхронная обработка импорта (Celery/Redis), слой адаптеров пайплайнов и хранилище данных}
+\label{fig:app_architecture}
+\end{figure}
+
+Ключевое архитектурное решение --- идемпотентность загрузки: каждый файл хешируется (SHA-256) перед обработкой, повторная загрузка того же файла для той же организации и того же типа данных отклоняется с ошибкой «уже загружен». Это исключает задвоение продаж и оплат при повторных выгрузках из 1С, что было одной из выявленных в ходе аудита причин искажения отчётности.
+
+\section{Функциональность}
+
+\subsection{Мультиорганизационность и доступ}
+
+Приложение поддерживает работу с несколькими юридическими лицами/площадками («организациями») в рамках одного аккаунта: данные изолируются по организации, а отчёты можно строить как по одной организации, так и в консолидированном виде по нескольким сразу. Доступ к приложению авторизован (анонимный доступ запрещён); реализовано управление пользователями и их правами на странице «Пользователи».
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.5\textwidth]{img/app_login.png}
+\caption{Страница авторизации}
+\label{fig:screen_login}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{img/app_orgs.png}
+\caption{Управление организациями}
+\label{fig:screen_orgs}
+\end{figure}
+
+\subsection{Загрузка и обработка данных}
+
+Страница «Загрузка данных» поддерживает три типа источников: продажи по контрагентам (отгрузка), продажи по контрагентам по оплате и банковские выписки. Пользователь выбирает организацию и тип данных, загружает файл \texttt{.xls}/\texttt{.xlsx}; задача обработки уходит в очередь, а интерфейс отображает статус пакета («В очереди» → «В обработке» → «Завершён»/«Ошибка») с периодическим опросом backend. После завершения показываются период данных, число обработанных строк и итоговая сумма. Загруженный пакет можно отменить: связанные строки удаляются, при этом исходный файл и журнал операции сохраняются для аудита действий.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/app_imports.png}
+\caption{Журнал загрузки данных}
+\label{fig:screen_imports}
+\end{figure}
+
+\subsection{Отчётность по продажам и оплатам}
+
+Реализованы отчёты с фильтрацией по организациям и периоду и раскрытием показателей до исходной строки:
+\begin{itemize}
+  \item продажи по времени (динамика отгрузок по дням/неделям/месяцам);
+  \item продажи по товарам (разрез по SKU из справочника \texttt{catalog});
+  \item продажи по контрагентам.
+\end{itemize}
+Каждый отчёт поддерживает экспорт в Excel в исходном табличном виде, пригодном для дальнейшей работы бухгалтерии.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/app_sales_timeline.png}
+\caption{Отчёт «Продажи по времени»}
+\label{fig:screen_sales_timeline}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/app_sales_products.png}
+\caption{Отчёт «Продажи по товарам»}
+\label{fig:screen_sales_products}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/app_sales_counterparties.png}
+\caption{Отчёт «Продажи по контрагентам»}
+\label{fig:screen_sales_counterparties}
+\end{figure}
+
+\subsection{Управленческий cash flow}
+
+Отдельный раздел приложения --- витрина денежного потока (\texttt{CashFlowPage}), объединяющая фактические данные и прогноз. Пользователь выбирает одну или несколько организаций и горизонт прогноза (7, 14, 30, 60 или 90 дней); backend (\texttt{/api/analytics/cashflow}) возвращает фактический ряд входящих и исходящих платежей и прогнозные значения, рассчитанные hurdle-моделью, описанной в главе~\ref{ch:ml}. График строится как комбинация столбцов (факт) и линий (прогноз) с разделительной линией между историей и прогнозом, что наглядно показывает менеджменту ожидаемые кассовые разрывы за 30 дней до их наступления.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/app_cashflow.png}
+\caption{Управленческий отчёт Cash Flow с прогнозом}
+\label{fig:screen_cashflow}
+\end{figure}
+
+\section{Тестирование и эксплуатационная готовность}
+
+Backend покрыт 22 автотестами, проверяющими модели и аудит организаций, выбор организации при импорте, защиту от повторной загрузки файла, откат транзакции при ошибке пайплайна, отмену пакета, права доступа, фильтры и расчёты отчётов и экспорт в Excel; frontend проверяется статической типизацией TypeScript (\texttt{tsc -b}). Для продуктивной эксплуатации предусмотрены резервное копирование и восстановление БД и файлового хранилища с проверкой на тестовом окружении перед вводом в реальную эксплуатацию.
+
+В текущей версии не реализован отдельный экран для банковских операций (данные доступны через API, но не вынесены в отдельный отчёт UI) и автогенерация OpenAPI-схемы --- эти доработки отнесены к следующей итерации развития приложения вместе с интеграцией складских остатков, описанной в разделе об ограничениях главы~\ref{ch:ml}.

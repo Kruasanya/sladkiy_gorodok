@@ -1,7 +1,7 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesClass{coursework}[2026/06/27 Coursework class]
 
-\LoadClass[14pt,a4paper]{extreport}
+\LoadClass[12pt,a4paper]{extreport}
 
 \RequirePackage[T2A]{fontenc}
 \RequirePackage[utf8]{inputenc}
@@ -17,7 +17,7 @@
 \RequirePackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \RequirePackage{tikz}
-\usetikzlibrary{arrows.meta,shapes.geometric,positioning,backgrounds,patterns}
+\usetikzlibrary{arrows.meta,shapes.geometric,positioning,backgrounds,patterns,fit}
 \RequirePackage{float}
 \RequirePackage{booktabs}
 \RequirePackage{longtable}
@@ -26,13 +26,10 @@
 \RequirePackage{hyperref}
 
 \geometry{
-  left=30mm,
-  right=15mm,
-  top=20mm,
-  bottom=20mm
+  margin=2cm
 }
 
-\onehalfspacing
+\singlespacing
 \setlength{\parindent}{1.25cm}
 \setlength{\parskip}{0pt}
 
