@@ -210,6 +210,44 @@ Rule-based подход --- упорядоченный набор правил, 
   \item при расхождении между rule и LLM при уверенности \texttt{medium} $\to$ операция помечается \texttt{needs\_review} с \texttt{review\_reason = "rule\_llm\_disagreement"}.
 \end{itemize}
 
+Процесс классификации проиллюстрирован на рисунке~\ref{fig:classification_flow}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=1.1cm and 2.8cm,
+  every node/.style={font=\small},
+  process/.style={rectangle, rounded corners=5pt, draw=black!60, fill=blue!10,
+    text width=5.8cm, minimum height=0.95cm, align=center},
+  decision/.style={diamond, aspect=2.5, draw=black!60, fill=orange!12,
+    text width=3cm, align=center, inner sep=0pt},
+  result/.style={rectangle, rounded corners=5pt, draw=green!60!black, fill=green!10,
+    text width=4.2cm, minimum height=0.85cm, align=center},
+  alert/.style={rectangle, rounded corners=5pt, draw=red!60, fill=red!8,
+    text width=4.2cm, minimum height=0.85cm, align=center},
+  arrow/.style={-Stealth, thick, black!65}
+]
+  \node[process] (input) {Банковская операция\\(direction, purpose, INN)};
+  \node[process, below=of input] (rule) {Rule-based классификатор\\(5 уровней иерархии)};
+  \node[decision, below=of rule] (conf) {confidence\\$\geq 0{,}90$?};
+  \node[result, right=2.8cm of conf] (rule_final) {\textbf{category\_final = rule}\\(94,2\% операций)};
+  \node[process, below=1.5cm of conf] (llm) {LLM-классификатор\\(LM Studio, JSON output)};
+  \node[decision, below=of llm] (agree) {rule = llm\\или llm valid?};
+  \node[result, right=2.8cm of agree] (llm_final) {\textbf{category\_final = llm}\\(прочие операции)};
+  \node[alert, below=1.5cm of agree] (review) {\textbf{needs\_review = True}\\238 операций (5,8\%)};
+
+  \draw[arrow] (input) -- (rule);
+  \draw[arrow] (rule) -- (conf);
+  \draw[arrow] (conf) -- node[above]{\small Да} (rule_final);
+  \draw[arrow] (conf) -- node[right]{\small Нет} (llm);
+  \draw[arrow] (llm) -- (agree);
+  \draw[arrow] (agree) -- node[above]{\small Да} (llm_final);
+  \draw[arrow] (agree) -- node[right]{\small Нет} (review);
+\end{tikzpicture}
+\caption{Блок-схема классификации банковских операций}
+\label{fig:classification_flow}
+\end{figure}
+
 \section{Результаты классификации и ручная валидация}
 
 \subsection{Итоги разметки}
@@ -257,6 +295,54 @@ Unknown-операций & 1 (5\,793 руб.; 0,01\% оборота) \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Визуально структура расходов по категориям представлена на рисунке~\ref{fig:expenses_bar}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,
+  width=13cm, height=6.5cm,
+  bar width=0.42cm,
+  xlabel={Сумма, млн руб.},
+  ytick=data,
+  yticklabels={
+    Прочие,
+    Связь и сервисы,
+    Банковские комиссии,
+    Профессиональные услуги,
+    Налоги и взносы,
+    Персонал,
+    Упаковка,
+    Аренда и ЖКХ,
+    Закупки},
+  yticklabel style={font=\small},
+  xmin=0, xmax=33,
+  xmajorgrids=true,
+  grid style={dashed,gray!40},
+  axis y line=left,
+  axis x line=bottom,
+  nodes near coords,
+  nodes near coords align={horizontal},
+  every node near coord/.append style={font=\scriptsize},
+]
+\addplot[fill=blue!55, draw=blue!70!black] coordinates {
+  (0.035,1)
+  (0.144,2)
+  (0.099,3)
+  (0.784,4)
+  (1.156,5)
+  (2.972,6)
+  (3.222,7)
+  (4.643,8)
+  (29.161,9)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{Структура операционных расходов по категориям (млн руб.), май 2025 --- апрель 2026}
+\label{fig:expenses_bar}
+\end{figure}
 
 \subsection{Паттерны, добавленные после ревью}
 

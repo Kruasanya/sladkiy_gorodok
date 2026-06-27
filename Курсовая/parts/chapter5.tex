@@ -86,6 +86,35 @@ lag\_1 & $-0.012$ & $-0.012$ & 0.055 \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,
+  width=11cm, height=5.5cm,
+  bar width=0.42cm,
+  xlabel={$\Delta$WAPE при перестановке},
+  ytick=data,
+  yticklabels={lag\_1, lag\_2, праздники, week\_of\_year, roll\_mean\_4, share\_svetofor},
+  yticklabel style={font=\small},
+  xmin=-0.06, xmax=0.28,
+  xmajorgrids=true,
+  grid style={dashed,gray!40},
+  axis y line=left,
+  axis x line=center,
+  nodes near coords,
+  nodes near coords align={horizontal},
+  every node near coord/.append style={font=\scriptsize},
+]
+\addplot[fill=blue!55, draw=blue!70!black] coordinates {
+  (-0.012,1) (0.051,2) (0.094,3) (0.143,4) (0.187,5) (0.235,6)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{Пермутационная важность признаков (больше = важнее для модели)}
+\label{fig:feature_importance_chart}
+\end{figure}
+
 \textbf{Интерпретация аномального результата по lag\_1}: отрицательная важность означает, что перестановка lag\_1 \textit{улучшает} точность модели. Это указывает на нестабильность оценки при малой выборке и чрезмерное подгонку модели под значение лага предыдущего месяца. Признак оставлен в наборе (значение близко к нулю, нет явного ухудшения), но его интерпретация требует осторожности.
 
 Признак share\_svetofor (доля канала «Светофор» в продажах текущего месяца) является наиболее сильным предиктором --- это согласуется с доминирующей долей сети (85,3\%) в выручке.
@@ -110,7 +139,29 @@ WAPE предпочтительнее MAPE при работе с малым ч�
   \item Метрика усредняется по всем фолдам.
 \end{enumerate}
 
-Параметры схемы в данном проекте: $n_0 = 60$ (минимальный размер обучающей выборки, 5 фолдов $\times$ 12 месяцев), $h = 3$ месяца (горизонт тестирования каждого фолда). Число фолдов: 5.
+Параметры схемы в данном проекте: $n_0 = 60$ (минимальный размер обучающей выборки, 5 фолдов $\times$ 12 месяцев), $h = 3$ месяца (горизонт тестирования каждого фолда). Число фолдов: 5. Схема показана на рисунке~\ref{fig:rolling_origin}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.82, every node/.style={font=\small}]
+  \pgfmathsetmacro{\H}{0.52}
+  \pgfmathsetmacro{\gap}{0.18}
+  \pgfmathsetmacro{\testW}{1.8}
+  \foreach \i in {1,...,5} {
+    \pgfmathsetmacro{\y}{(\i-1)*(\H+\gap)}
+    \pgfmathsetmacro{\trainW}{6 + (\i-1)*0.9}
+    \fill[blue!30, draw=blue!60] (0,\y) rectangle (\trainW,\y+\H);
+    \fill[orange!65, draw=orange!80] (\trainW,\y) rectangle (\trainW+\testW,\y+\H);
+    \node[right] at (\trainW+\testW+0.15, \y+\H/2) {Фолд \i};
+  }
+  \node[blue!70, below] at (4, -0.25) {Обучение (расширяется)};
+  \node[orange!80!black, below] at (9.3, -0.25) {Тест ($h = 3$ мес.)};
+  \draw[-Stealth, thick] (-0.2,0) -- (-0.2, 5*(\H+\gap)+0.1) node[above]{};
+  \draw[-Stealth, thick] (0,-0.6) -- (12.5,-0.6) node[right]{Время};
+\end{tikzpicture}
+\caption{Схема rolling-origin cross-validation (расширяющееся обучающее окно, фиксированный тестовый горизонт)}
+\label{fig:rolling_origin}
+\end{figure}
 
 Дополнительно рассчитывается метрика \textbf{recent WAPE}: ошибка только на последнем фолде (самые свежие данные). Это позволяет выявить деградацию качества при drift данных~\cite{widmer1996learning}.
 
@@ -141,6 +192,52 @@ ElasticNet & 0.741 & 0.043 & Хуже бейзлайна \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Графическое сравнение всех моделей представлено на рисунке~\ref{fig:model_comparison_chart}. Вертикальная пунктирная линия отмечает результат победителя (MA(4), WAPE = 0.655).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,
+  width=12cm, height=8.5cm,
+  bar width=0.38cm,
+  xlabel={CV WAPE (меньше --- лучше)},
+  ytick=data,
+  yticklabels={
+    Extra Trees,
+    Random Forest,
+    LightGBM,
+    CatBoost,
+    ElasticNet,
+    Ridge,
+    Seasonal Naive,
+    Naive Last,
+    MA(2),
+    \textbf{MA(4)},
+    HistGBM\textsuperscript{*}},
+  yticklabel style={font=\small},
+  xmin=0.58, xmax=0.93,
+  xmajorgrids=true,
+  grid style={dashed,gray!40},
+  axis y line=left,
+  axis x line=bottom,
+  nodes near coords,
+  nodes near coords align={horizontal},
+  every node near coord/.append style={font=\tiny},
+]
+\addplot[fill=blue!45, draw=blue!65] coordinates {
+  (0.869,1) (0.841,2) (0.812,3) (0.783,4)
+  (0.741,5) (0.723,6) (0.731,7) (0.712,8)
+  (0.698,9) (0.655,10) (0.641,11)
+};
+\draw[dashed, green!55!black, very thick]
+  (axis cs:0.655,0.4) -- (axis cs:0.655,11.6);
+\end{axis}
+\end{tikzpicture}
+\caption{CV WAPE всех протестированных моделей прогноза спроса. Пунктир --- результат победителя (MA(4) = 0.655). * HistGBM --- методологический артефакт}
+\label{fig:model_comparison_chart}
+\end{figure}
 
 \subsection{Методологический артефакт: ложная победа HistGBM}
 
@@ -213,6 +310,38 @@ ElasticNet & 0.741 & 0.043 & Хуже бейзлайна \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,
+  width=12cm, height=5cm,
+  bar width=0.45cm,
+  xlabel={Доля возвратов, \%},
+  ytick=data,
+  yticklabels={Песочное печенье, Ажурная коса, ДИВНОЕ, Кекс с изюмом, Мадлены ассорти},
+  yticklabel style={font=\small},
+  xmin=0, xmax=30,
+  xmajorgrids=true,
+  grid style={dashed,gray!40},
+  axis y line=left,
+  axis x line=bottom,
+  nodes near coords,
+  nodes near coords align={horizontal},
+  every node near coord/.append style={font=\small},
+]
+\addplot[fill=red!55, draw=red!70!black] coordinates {
+  (5.2,1) (14.6,2) (20.53,3) (22.96,4) (24.95,5)
+};
+\draw[dashed, orange!80!black, very thick]
+  (axis cs:12,0.4) -- (axis cs:12,5.55)
+  node[above, font=\scriptsize, orange!80!black]{норма~12\%};
+\end{axis}
+\end{tikzpicture}
+\caption{Доля возвратов по SKU, \%. Пунктир --- верхняя граница нормы для хлебобулочной продукции}
+\label{fig:return_rates_chart}
+\end{figure}
 
 Мадлены ассорти и Кекс с изюмом демонстрируют патологически высокую долю возвратов (почти четверть отгруженного товара). Это нетипично даже для скоропортящейся продукции: средняя доля возвратов в хлебопекарной промышленности составляет 5--12\%. Возможные причины: короткий срок годности в сочетании с низкой оборачиваемостью на полке «Светофора», завышенные объёмы поставки, проблемы с выкладкой.
 
@@ -401,6 +530,41 @@ z_\text{robust}(x) = \frac{x - \text{median}(X)}{c \cdot \text{MAD}(X)}, \quad c
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,
+  width=10.5cm, height=5cm,
+  bar width=0.48cm,
+  xlabel={PSI},
+  ytick=data,
+  yticklabels={Возвраты, Спрос, Outflow, Inflow},
+  yticklabel style={font=\small},
+  xmin=0, xmax=1.4,
+  xmajorgrids=true,
+  grid style={dashed,gray!40},
+  axis y line=left,
+  axis x line=bottom,
+  nodes near coords,
+  nodes near coords align={horizontal},
+  every node near coord/.append style={font=\small},
+]
+\addplot[fill=blue!50, draw=blue!70] coordinates {
+  (0.087,1) (0.124,2) (1.165,3) (1.032,4)
+};
+\draw[dashed, orange!70!black, very thick]
+  (axis cs:0.10,0.4) -- (axis cs:0.10,4.55)
+  node[above, font=\scriptsize, orange!70!black, rotate=90, yshift=3pt]{0.10 мониторинг};
+\draw[dashed, red!65, very thick]
+  (axis cs:0.25,0.4) -- (axis cs:0.25,4.55)
+  node[above, font=\scriptsize, red!65, rotate=90, yshift=3pt]{0.25 переобучение};
+\end{axis}
+\end{tikzpicture}
+\caption{PSI мониторинг дрейфа. Значения inflow и outflow критически превышают порог переобучения}
+\label{fig:psi_chart}
+\end{figure}
 
 PSI по inflow (1.032) и outflow (1.165) значительно превышают критический порог 0.25. Это объясняется сезонным паттерном: модели, обученные на весенне-летних данных, не могут адекватно описывать осенне-зимний период. Переобучение необходимо.
 

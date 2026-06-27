@@ -12,6 +12,12 @@
 \RequirePackage{csquotes}
 \RequirePackage{xcolor}
 \RequirePackage{graphicx}
+\RequirePackage{amsmath}
+\RequirePackage{amssymb}
+\RequirePackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\RequirePackage{tikz}
+\usetikzlibrary{arrows.meta,shapes.geometric,positioning,backgrounds,patterns}
 \RequirePackage{float}
 \RequirePackage{booktabs}
 \RequirePackage{longtable}
