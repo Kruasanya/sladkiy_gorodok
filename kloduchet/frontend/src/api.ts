@@ -60,6 +60,7 @@ export interface TimelineRow {
 
 export interface ProductRow {
   nomenclature: string | null;
+  display_name: string | null;
   gross_sales_total: number;
   returns_total: number;
   amount_total: number;

@@ -3,6 +3,7 @@ from django.db.models.functions import TruncDay, TruncMonth, TruncWeek
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.catalog.models import ProductReference
 from apps.payments.models import PaymentRecord
 from apps.sales.models import SaleRecord
 
@@ -57,6 +58,13 @@ def _filtered_queryset(request):
     if nomenclature:
         qs = qs.filter(nomenclature__icontains=nomenclature)
 
+    display_name = request.query_params.get("display_name")
+    if display_name:
+        raw_values = ProductReference.objects.filter(display_name=display_name).values_list(
+            "nomenclature_raw", flat=True
+        )
+        qs = qs.filter(nomenclature__in=list(raw_values))
+
     contract_number = request.query_params.get("contract_number")
     if contract_number:
         qs = qs.filter(contract_number=contract_number)
@@ -106,6 +114,9 @@ class SalesProductsView(APIView):
     def get(self, request):
         qs = _filtered_queryset(request)
         total_amount = qs.aggregate(total=Sum("amount"))["total"] or 0
+        display_name_by_raw = dict(
+            ProductReference.objects.values_list("nomenclature_raw", "display_name")
+        )
 
         rows = (
             qs.values("nomenclature")
@@ -125,6 +136,7 @@ class SalesProductsView(APIView):
             data.append(
                 {
                     "nomenclature": row["nomenclature"],
+                    "display_name": display_name_by_raw.get(row["nomenclature"]),
                     "gross_sales_total": row["gross_sales_total"] or 0,
                     "returns_total": row["returns_total"] or 0,
                     "amount_total": amount,
@@ -134,6 +146,53 @@ class SalesProductsView(APIView):
                 }
             )
         return Response({"rows": data, "amount_total": total_amount})
+
+
+class SalesProductsTimeseriesView(APIView):
+    """Графики продаж по товарам: динамика во времени с выбираемой агрегацией."""
+
+    def get(self, request):
+        group = request.query_params.get("group", "month")
+        trunc = TRUNC_BY_GROUP.get(group, TruncMonth)
+        metric = request.query_params.get("metric", "amount")
+        if metric not in {"amount", "quantity"}:
+            metric = "amount"
+        dimension = request.query_params.get("dimension", "display_name")
+
+        qs = _filtered_queryset(request)
+        display_name_by_raw = dict(
+            ProductReference.objects.values_list("nomenclature_raw", "display_name")
+        )
+
+        rows = (
+            qs.annotate(period=trunc("sale_date"))
+            .values("period", "nomenclature")
+            .annotate(value=Sum(metric))
+            .order_by("period")
+        )
+
+        series: dict[str, dict] = {}
+        for row in rows:
+            if row["period"] is None:
+                continue
+            key = (
+                display_name_by_raw.get(row["nomenclature"]) or row["nomenclature"]
+                if dimension == "display_name"
+                else row["nomenclature"]
+            )
+            key = key or "—"
+            entry = series.setdefault(key, {})
+            entry[row["period"].isoformat()] = entry.get(row["period"].isoformat(), 0) + float(
+                row["value"] or 0
+            )
+
+        periods = sorted({row["period"].isoformat() for row in rows if row["period"] is not None})
+        result = [
+            {"name": name, "points": [{"period": p, "value": values.get(p, 0)} for p in periods]}
+            for name, values in series.items()
+        ]
+
+        return Response({"group": group, "metric": metric, "dimension": dimension, "series": result})
 
 
 class SalesCounterpartiesView(APIView):

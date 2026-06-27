@@ -1,38 +1,107 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { api, type Organization, type ProductRow } from "../api";
+import type { ProductReference } from "./CatalogPage";
+
+interface TimeseriesPoint {
+  period: string;
+  value: number;
+}
+interface TimeseriesSeries {
+  name: string;
+  points: TimeseriesPoint[];
+}
+interface TimeseriesResponse {
+  group: string;
+  metric: string;
+  dimension: string;
+  series: TimeseriesSeries[];
+}
+
+const COLORS = ["#3461ff", "#ff7a45", "#36b37e", "#bf2600", "#6554c0", "#00b8d9", "#ffab00"];
 
 export default function SalesProductsPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
+  const [products, setProducts] = useState<ProductReference[]>([]);
+  const [nomenclature, setNomenclature] = useState("");
+  const [displayName, setDisplayName] = useState("");
+
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [amountTotal, setAmountTotal] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  const [chartGroup, setChartGroup] = useState("month");
+  const [chartMetric, setChartMetric] = useState("amount");
+  const [chartDimension, setChartDimension] = useState("display_name");
+  const [timeseries, setTimeseries] = useState<TimeseriesResponse | null>(null);
+
   useEffect(() => {
     api.get<Organization[]>("/organizations/").then((res) => setOrganizations(res.data));
+    api.get<ProductReference[]>("/catalog/products/").then((res) => setProducts(res.data));
   }, []);
 
-  function load() {
-    setLoading(true);
+  const displayNames = useMemo(
+    () => Array.from(new Set(products.map((p) => p.display_name).filter(Boolean))).sort(),
+    [products]
+  );
+
+  function buildParams() {
     const params = new URLSearchParams();
     selectedOrgs.forEach((id) => params.append("organization", id));
+    if (nomenclature) params.set("nomenclature", nomenclature);
+    if (displayName) params.set("display_name", displayName);
+    return params;
+  }
+
+  useEffect(() => {
+    setLoading(true);
     api
       .get<{ rows: ProductRow[]; amount_total: number }>(
-        `/analytics/sales/products?${params.toString()}`
+        `/analytics/sales/products?${buildParams().toString()}`
       )
       .then((res) => {
         setRows(res.data.rows);
         setAmountTotal(res.data.amount_total);
       })
       .finally(() => setLoading(false));
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrgs, nomenclature, displayName]);
 
-  useEffect(load, [selectedOrgs]);
+  useEffect(() => {
+    const params = buildParams();
+    params.set("group", chartGroup);
+    params.set("metric", chartMetric);
+    params.set("dimension", chartDimension);
+    api
+      .get<TimeseriesResponse>(`/analytics/sales/products/timeseries?${params.toString()}`)
+      .then((res) => setTimeseries(res.data));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrgs, nomenclature, displayName, chartGroup, chartMetric, chartDimension]);
+
+  const chartData = useMemo(() => {
+    if (!timeseries) return [];
+    const periods = timeseries.series[0]?.points.map((p) => p.period) ?? [];
+    return periods.map((period, i) => {
+      const point: Record<string, string | number> = { period };
+      timeseries.series.forEach((s) => {
+        point[s.name] = s.points[i]?.value ?? 0;
+      });
+      return point;
+    });
+  }, [timeseries]);
 
   function exportXlsx() {
-    const params = new URLSearchParams();
-    selectedOrgs.forEach((id) => params.append("organization", id));
-    window.open(`/api/exports/sales/products?${params.toString()}`, "_blank");
+    window.open(`/api/exports/sales/products?${buildParams().toString()}`, "_blank");
   }
 
   return (
@@ -57,8 +126,79 @@ export default function SalesProductsPage() {
           </select>
           <span className="hint">Ничего не выбрано = все организации</span>
         </label>
+        <label>
+          Номенклатура (1С)
+          <input
+            type="text"
+            value={nomenclature}
+            onChange={(e) => setNomenclature(e.target.value)}
+            placeholder="Поиск по сырому названию"
+          />
+        </label>
+        <label>
+          Общее название
+          <select value={displayName} onChange={(e) => setDisplayName(e.target.value)}>
+            <option value="">Все товары</option>
+            {displayNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
         <button onClick={exportXlsx}>Экспорт в Excel</button>
       </div>
+
+      <h2>Динамика продаж</h2>
+      <div className="filters-bar">
+        <label>
+          Период
+          <select value={chartGroup} onChange={(e) => setChartGroup(e.target.value)}>
+            <option value="day">По дням</option>
+            <option value="week">По неделям</option>
+            <option value="month">По месяцам</option>
+          </select>
+        </label>
+        <label>
+          Метрика
+          <select value={chartMetric} onChange={(e) => setChartMetric(e.target.value)}>
+            <option value="amount">Сумма</option>
+            <option value="quantity">Количество</option>
+          </select>
+        </label>
+        <label>
+          Разрез
+          <select value={chartDimension} onChange={(e) => setChartDimension(e.target.value)}>
+            <option value="display_name">По общему названию</option>
+            <option value="nomenclature">По номенклатуре (1С)</option>
+          </select>
+        </label>
+      </div>
+
+      {timeseries && timeseries.series.length > 0 ? (
+        <div style={{ width: "100%", height: 360 }}>
+          <ResponsiveContainer>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              {timeseries.series.map((s, i) => (
+                <Line
+                  key={s.name}
+                  type="monotone"
+                  dataKey={s.name}
+                  stroke={COLORS[i % COLORS.length]}
+                  dot={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <p className="empty-state">Нет данных для графика.</p>
+      )}
 
       {loading ? (
         <p>Загрузка…</p>
@@ -71,6 +211,7 @@ export default function SalesProductsPage() {
           <thead>
             <tr>
               <th>Номенклатура</th>
+              <th>Общее название</th>
               <th>Сумма продаж</th>
               <th>Возвраты и корректировки</th>
               <th>Чистая сумма</th>
@@ -83,6 +224,7 @@ export default function SalesProductsPage() {
             {rows.map((row, i) => (
               <tr key={i}>
                 <td>{row.nomenclature ?? "—"}</td>
+                <td>{row.display_name ?? "—"}</td>
                 <td>{formatMoney(row.gross_sales_total)}</td>
                 <td>{formatMoney(row.returns_total)}</td>
                 <td>{formatMoney(row.amount_total)}</td>
@@ -94,7 +236,7 @@ export default function SalesProductsPage() {
           </tbody>
           <tfoot>
             <tr>
-              <td>Итого</td>
+              <td colSpan={2}>Итого</td>
               <td colSpan={2}></td>
               <td>{formatMoney(amountTotal)}</td>
               <td colSpan={3}></td>

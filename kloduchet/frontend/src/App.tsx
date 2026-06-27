@@ -9,6 +9,8 @@ import SalesTimelinePage from "./pages/SalesTimelinePage";
 import SalesProductsPage from "./pages/SalesProductsPage";
 import SalesCounterpartiesPage from "./pages/SalesCounterpartiesPage";
 import SalesVsPaymentsPage from "./pages/SalesVsPaymentsPage";
+import LedgerPage from "./pages/LedgerPage";
+import CatalogPage from "./pages/CatalogPage";
 
 export default function App() {
   const [user, setUser] = useState<{ username: string } | null | "loading">("loading");
@@ -46,12 +48,16 @@ export default function App() {
     >
       <Routes>
         <Route path="/" element={<Navigate to="/sales/timeline" replace />} />
+        <Route path="/ledger/sales" element={<LedgerPage ledgerType="sales" />} />
+        <Route path="/ledger/receipts" element={<LedgerPage ledgerType="receipts" />} />
+        <Route path="/ledger/payments" element={<LedgerPage ledgerType="payments" />} />
         <Route path="/sales/timeline" element={<SalesTimelinePage />} />
         <Route path="/sales/products" element={<SalesProductsPage />} />
         <Route path="/sales/counterparties" element={<SalesCounterpartiesPage />} />
         <Route path="/sales-vs-payments" element={<SalesVsPaymentsPage />} />
         <Route path="/imports" element={<ImportsPage />} />
         <Route path="/organizations" element={<OrganizationsPage />} />
+        <Route path="/catalog/products" element={<CatalogPage />} />
         <Route path="*" element={<Navigate to="/sales/timeline" replace />} />
       </Routes>
     </Layout>
