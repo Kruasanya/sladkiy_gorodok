@@ -1,0 +1,38 @@
+\documentclass{coursework}
+
+\usepackage[
+  backend=biber,
+  style=gost-numeric,
+  sorting=none
+]{biblatex}
+
+\addbibresource{references.bib}
+
+\begin{document}
+
+\courseworktitlepage
+  {Название образовательной организации}
+  {Кафедра / направление подготовки}
+  {Применение методов машинного обучения и больших языковых моделей для финансового и операционного анализа малого производственного бизнеса}
+  {ФИО студента}
+  {ФИО руководителя}
+  {Москва, 2026}
+
+\tableofcontents
+\clearpage
+
+\input{parts/introduction}
+\input{parts/chapter1}
+\input{parts/chapter2}
+\input{parts/chapter3}
+\input{parts/chapter4}
+\input{parts/chapter5}
+\input{parts/chapter6}
+\input{parts/conclusion}
+
+\printbibliography
+
+\appendix
+\input{parts/appendix}
+
+\end{document}
