@@ -14,7 +14,7 @@ class LoginView(APIView):
         if user is None:
             return Response({"detail": "Неверный логин или пароль."}, status=400)
         login(request, user)
-        return Response({"id": user.id, "username": user.username})
+        return Response({"id": user.id, "username": user.username, "is_staff": user.is_staff})
 
 
 class LogoutView(APIView):
@@ -25,4 +25,10 @@ class LogoutView(APIView):
 
 class MeView(APIView):
     def get(self, request):
-        return Response({"id": request.user.id, "username": request.user.username})
+        return Response(
+            {
+                "id": request.user.id,
+                "username": request.user.username,
+                "is_staff": request.user.is_staff,
+            }
+        )
