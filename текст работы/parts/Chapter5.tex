@@ -1,10 +1,11 @@
 \chapter{Собственная CRM-платформа}
+\label{ch:app}
 
 \section{Назначение и место приложения в проекте}
 
 Аудит, проведённый в предыдущих главах, опирается на выгрузки 1С и банковские выписки в формате Excel, разнородные по структуре между производственными площадками и периодами. Ручная сверка и пересчёт таких файлов из месяца в месяц не масштабируется и не позволяет получать управленческую отчётность регулярно, а не разово. Для решения этой проблемы в рамках проекта разработано собственное веб-приложение «СкладУчет» --- учётно-аналитическая платформа, автоматизирующая загрузку первичных данных (продажи, оплаты, банковские операции), их хранение в едином формате и построение управленческих отчётов, включая прогноз денежного потока.
 
-Приложение реализует первую очередь автоматизации: загрузку и нормализацию данных, базовые отчёты по продажам и оплатам, а также витрину cash flow, использующую прогнозные модели из главы~\ref{ch:ml} напрямую в интерфейсе. Полная функциональная и техническая спецификации приведены в \texttt{kloduchet/docs/specs/}; в этой главе описаны архитектура и реализованный функционал.
+По итогам работы прогнозный контур из главы~\ref{ch:ml} не остался набором экспериментальных ноутбуков: модели прогноза денежного потока интегрированы непосредственно в самописную аналитическую систему, что позволяет в режиме, близком к реальному времени, отслеживать движение денежных средств и поступающие транзакции, а не возвращаться к разовому аудиту раз в квартал. Приложение реализует первую очередь этой автоматизации: загрузку и нормализацию данных, базовые отчёты по продажам, а также витрину cash flow, использующую прогнозные модели напрямую в интерфейсе. Полная функциональная и техническая спецификации приведены в \texttt{kloduchet/docs/specs/}; в этой главе описаны архитектура и реализованный функционал.
 
 \section{Архитектура приложения}
 
@@ -67,7 +68,7 @@
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.5\textwidth]{img/app_login.png}
+\includegraphics[width=0.85\textwidth]{img/app_login.png}
 \caption{Страница авторизации}
 \label{fig:screen_login}
 \end{figure}
@@ -85,7 +86,7 @@
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{img/app_imports.png}
+\includegraphics[width=0.85\textwidth]{img/app_imports.png}
 \caption{Журнал загрузки данных}
 \label{fig:screen_imports}
 \end{figure}
@@ -102,21 +103,21 @@
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{img/app_sales_timeline.png}
+\includegraphics[width=0.85\textwidth]{img/app_sales_timeline.png}
 \caption{Отчёт «Продажи по времени»}
 \label{fig:screen_sales_timeline}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{img/app_sales_products.png}
+\includegraphics[width=0.85\textwidth]{img/app_sales_products.png}
 \caption{Отчёт «Продажи по товарам»}
 \label{fig:screen_sales_products}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{img/app_sales_counterparties.png}
+\includegraphics[width=0.85\textwidth]{img/app_sales_counterparties.png}
 \caption{Отчёт «Продажи по контрагентам»}
 \label{fig:screen_sales_counterparties}
 \end{figure}
@@ -127,7 +128,7 @@
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{img/app_cashflow.png}
+\includegraphics[width=0.85\textwidth]{img/app_cashflow.png}
 \caption{Управленческий отчёт Cash Flow с прогнозом}
 \label{fig:screen_cashflow}
 \end{figure}

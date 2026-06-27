@@ -24,6 +24,7 @@
 \RequirePackage{array}
 \RequirePackage{enumitem}
 \RequirePackage{hyperref}
+\RequirePackage{pgffor}
 
 \geometry{
   margin=2cm
@@ -47,26 +48,48 @@
 \renewcommand{\contentsname}{Содержание}
 \renewcommand{\bibname}{Список использованных источников}
 
-\newcommand{\courseworktitlepage}[6]{
+% Строка "ФИО ........... подпись" с короткой линией для подписи справа.
+\newcommand{\signatureline}[1]{%
+  \noindent\makebox[0.62\linewidth][l]{#1}%
+  \makebox[0.16\linewidth]{\hrulefill}\hspace{1em}%
+  {\small подпись}\\[0.6cm]%
+}
+
+% #1 - название на русском
+% #2 - название на английском
+% #3 - блок студентов: одна или несколько строк \signatureline{Ф.И.О.}
+% #4 - блок руководителя: \signatureline{должность, звание, Ф.И.О.}
+% #5 - год
+\newcommand{\courseworktitlepage}[5]{
   \begin{titlepage}
     \begin{center}
-      #1\\
-      #2\\[3cm]
+      Федеральное государственное автономное образовательное учреждение\\
+      высшего образования «Национальный исследовательский университет\\
+      «Высшая школа экономики»\\[1cm]
 
-      {\bfseries КУРСОВАЯ РАБОТА}\\[0.5cm]
-      по теме:\\[0.3cm]
-      {\bfseries #3}\\[3cm]
+      Факультет компьютерных наук\\
+      Магистерская программа «Финансовые технологии и анализ данных»\\[2.5cm]
+
+      {\Large\bfseries КУРСОВАЯ РАБОТА}\\[2cm]
     \end{center}
 
-    \begin{flushright}
-      Выполнил: #4\\
-      Руководитель: #5
-    \end{flushright}
+    \noindent\textbf{На тему (рус.):} #1\\[0.6cm]
+    \noindent\textbf{На тему (англ.):} #2
+
+    \vspace{2.5cm}
+
+    \noindent\textbf{Студент}\\[0.6cm]
+    #3
+
+    \vspace{1.5cm}
+
+    \noindent\textbf{Руководитель КР}\\[0.6cm]
+    #4
 
     \vfill
 
     \begin{center}
-      #6
+      Москва, #5
     \end{center}
   \end{titlepage}
 }
