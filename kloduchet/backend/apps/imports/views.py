@@ -3,9 +3,11 @@ from pathlib import Path
 from django.http import FileResponse, Http404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.organizations.models import Organization
+from apps.organizations.scoping import DenyTestClient
 
 from . import services
 from .models import ImportBatch
@@ -16,6 +18,7 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
     queryset = ImportBatch.objects.select_related("organization", "stored_file").all()
     serializer_class = ImportBatchSerializer
     http_method_names = ["get", "post", "head", "options"]
+    permission_classes = [IsAuthenticated, DenyTestClient]
 
     def get_queryset(self):
         qs = super().get_queryset()

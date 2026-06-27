@@ -25,8 +25,23 @@ export interface Organization {
   inn: string;
   kpp: string;
   is_active: boolean;
+  is_test: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AppUser {
+  id: number;
+  username: string;
+  password?: string;
+  plaintext_password: string;
+  is_staff: boolean;
+  is_active: boolean;
+  organization: string | null;
+  organization_name: string | null;
+  is_test_client: boolean;
+  date_joined: string;
+  last_login: string | null;
 }
 
 export interface ImportBatch {

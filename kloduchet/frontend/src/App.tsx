@@ -12,9 +12,12 @@ import SalesVsPaymentsPage from "./pages/SalesVsPaymentsPage";
 import LedgerPage from "./pages/LedgerPage";
 import CatalogPage from "./pages/CatalogPage";
 import CashFlowPage from "./pages/CashFlowPage";
+import UsersPage from "./pages/UsersPage";
 
 export default function App() {
-  const [user, setUser] = useState<{ username: string } | null | "loading">("loading");
+  const [user, setUser] = useState<
+    { username: string; is_staff: boolean; is_test_client: boolean } | null | "loading"
+  >("loading");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -57,9 +60,30 @@ export default function App() {
         <Route path="/sales/products" element={<SalesProductsPage />} />
         <Route path="/sales/counterparties" element={<SalesCounterpartiesPage />} />
         <Route path="/sales-vs-payments" element={<SalesVsPaymentsPage />} />
-        <Route path="/imports" element={<ImportsPage />} />
-        <Route path="/organizations" element={<OrganizationsPage />} />
-        <Route path="/catalog/products" element={<CatalogPage />} />
+        <Route
+          path="/imports"
+          element={user.is_test_client ? <Navigate to="/sales/timeline" replace /> : <ImportsPage />}
+        />
+        <Route
+          path="/organizations"
+          element={
+            user.is_test_client ? <Navigate to="/sales/timeline" replace /> : <OrganizationsPage />
+          }
+        />
+        <Route
+          path="/catalog/products"
+          element={user.is_test_client ? <Navigate to="/sales/timeline" replace /> : <CatalogPage />}
+        />
+        <Route
+          path="/admin/users"
+          element={
+            user.is_staff && !user.is_test_client ? (
+              <UsersPage />
+            ) : (
+              <Navigate to="/sales/timeline" replace />
+            )
+          }
+        />
         <Route path="*" element={<Navigate to="/sales/timeline" replace />} />
       </Routes>
     </Layout>

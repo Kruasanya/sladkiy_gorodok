@@ -1,10 +1,11 @@
 from django.contrib.auth import get_user_model
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import AuditEvent, Organization
+from .scoping import DenyTestClient
 from .serializers import OrganizationSerializer, UserSerializer
 
 User = get_user_model()
@@ -14,6 +15,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     queryset = Organization.objects.all()
     serializer_class = OrganizationSerializer
     http_method_names = ["get", "post", "patch", "put", "head", "options"]
+    permission_classes = [IsAuthenticated, DenyTestClient]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -82,5 +84,5 @@ class UserViewSet(viewsets.ModelViewSet):
 
     queryset = User.objects.select_related("profile").order_by("username")
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminUser, DenyTestClient]
     http_method_names = ["get", "post", "patch", "put", "head", "options"]

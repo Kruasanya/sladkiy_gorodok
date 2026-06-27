@@ -3,6 +3,17 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.organizations.scoping import is_test_client
+
+
+def _user_payload(user):
+    return {
+        "id": user.id,
+        "username": user.username,
+        "is_staff": user.is_staff,
+        "is_test_client": is_test_client(user),
+    }
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -14,7 +25,7 @@ class LoginView(APIView):
         if user is None:
             return Response({"detail": "Неверный логин или пароль."}, status=400)
         login(request, user)
-        return Response({"id": user.id, "username": user.username, "is_staff": user.is_staff})
+        return Response(_user_payload(user))
 
 
 class LogoutView(APIView):
@@ -25,10 +36,4 @@ class LogoutView(APIView):
 
 class MeView(APIView):
     def get(self, request):
-        return Response(
-            {
-                "id": request.user.id,
-                "username": request.user.username,
-                "is_staff": request.user.is_staff,
-            }
-        )
+        return Response(_user_payload(request.user))

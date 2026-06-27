@@ -13,6 +13,8 @@ from __future__ import annotations
 import random
 from decimal import Decimal
 
+from rest_framework.permissions import BasePermission
+
 
 def get_profile(user):
     return getattr(user, "profile", None)
@@ -30,8 +32,20 @@ def is_test_client(user) -> bool:
     return bool(profile and profile.is_test_client)
 
 
+class DenyTestClient(BasePermission):
+    """Запрещает тестовому клиенту доступ к разделам администрирования
+    (загрузка данных, организации, справочники, пользователи)."""
+
+    message = "Тестовому клиенту недоступен раздел администрирования."
+
+    def has_permission(self, request, view):
+        return not is_test_client(request.user)
+
+
 def _user_seed(user) -> int:
-    return hash(("obfuscation-seed", getattr(user, "id", 0))) & 0xFFFFFFFF
+    import zlib
+
+    return zlib.crc32(f"obfuscation-seed-{getattr(user, 'id', 0)}".encode())
 
 
 def linear_distortion_params(user) -> tuple[float, float]:
