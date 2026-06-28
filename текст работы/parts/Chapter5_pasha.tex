@@ -34,6 +34,15 @@
 \end{tabular}
 \end{table}
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/monthly_sales.png}
+\caption{Продажи по месяцам, июнь 2025 --- июнь 2026}
+\label{fig:monthly_sales}
+\end{figure}
+
+Помесячная динамика на рисунке~\ref{fig:monthly_sales} (расчёт --- \texttt{Аудит/monthly\_dynamics.ipynb}) наглядно показывает неравномерность продаж в течение года, которую агрегированные годовые показатели таблицы~\ref{tab:sales_by_sku} скрывают: именно эта помесячная нестабильность обосновывает необходимость прогнозной модели, а не просто среднего по году значения.
+
 106 наблюдений --- нижняя граница, при которой градиентный бустинг хотя бы теоретически применим, но только при жёстком контроле сложности модели~\cite{makridakis2018m4}. Исходный набор включал 13 кандидатов-признаков; проведена двухэтапная отборка. На первом этапе по корреляционным и смысловым соображениям исключены: lag\_3, lag\_4 (слабая предсказательная сила при малой выборке), roll\_mean\_2 (нестабильный на малых выборках), month\_sin, month\_cos (дублируют week\_of\_year), is\_summer, is\_winter (избыточны при наличии week\_of\_year). На втором этапе оставшиеся признаки проверены пермутационным анализом~\cite{guyon2003introduction}: признак считается значимым, если его перестановка увеличивает WAPE более чем на 0,01. Итоговый набор из 6 признаков и результаты пермутационного анализа представлены в таблице~\ref{tab:feature_importance} и на рисунке~\ref{fig:feature_importance_chart}.
 
 \begin{table}[H]
@@ -65,14 +74,15 @@ lag\_1 & $-0.012$ & $-0.012$ & 0.055 \\
   ytick=data,
   yticklabels={lag\_1, lag\_2, праздники, week\_of\_year, roll\_mean\_4, share\_svetofor},
   yticklabel style={font=\small},
-  xmin=-0.06, xmax=0.28,
+  xmin=-0.06, xmax=0.30,
+  clip=false,
   xmajorgrids=true,
   grid style={dashed,gray!40},
   axis y line=left,
-  axis x line=center,
+  axis x line=bottom,
   nodes near coords,
   nodes near coords align={horizontal},
-  every node near coord/.append style={font=\scriptsize},
+  every node near coord/.append style={font=\scriptsize, anchor=west},
 ]
 \addplot[fill=blue!55, draw=blue!70!black] coordinates {
   (-0.012,1) (0.051,2) (0.094,3) (0.143,4) (0.187,5) (0.235,6)
@@ -87,7 +97,7 @@ lag\_1 & $-0.012$ & $-0.012$ & 0.055 \\
 
 \subsection{Методология кросс-валидации}
 
-Оценка качества прогнозных моделей на временных рядах требует специальной схемы, исключающей утечку данных из будущего в прошлое~\cite{bergmeir2018note,kaufman2012leakage}. Применяется \textbf{rolling-origin} кросс-валидация (расширяющееся окно):
+Оценка качества прогнозных моделей на временных рядах требует специальной схемы, исключающей утечку данных из будущего в прошлое~\cite{kaufman2012leakage}. Применяется \textbf{rolling-origin} кросс-валидация (расширяющееся окно):
 \begin{enumerate}
   \item Сначала обучение на первых $n_0$ наблюдениях, тест на следующих $h$.
   \item На каждой итерации обучающее окно расширяется на один шаг.
@@ -111,7 +121,8 @@ lag\_1 & $-0.012$ & $-0.012$ & 0.055 \\
   }
   \node[blue!70, below] at (4, -0.25) {Обучение (расширяется)};
   \node[orange!80!black, below] at (9.3, -0.25) {Тест ($h = 3$ мес.)};
-  \draw[-Stealth, thick] (-0.2,0) -- (-0.2, 5*(\H+\gap)+0.1) node[above]{};
+  \pgfmathsetmacro{\axisTopY}{5*(\H+\gap)+0.1}
+  \draw[-Stealth, thick] (-0.2,0) -- (-0.2, \axisTopY) node[above]{};
   \draw[-Stealth, thick] (0,-0.6) -- (12.5,-0.6) node[right]{Время};
 \end{tikzpicture}
 \caption{Схема rolling-origin cross-validation (расширяющееся обучающее окно, фиксированный тестовый горизонт)}
@@ -236,26 +247,36 @@ ElasticNet & 0.741 & 0.043 & Хуже бейзлайна \\
   ytick=data,
   yticklabels={Песочное печенье, Ажурная коса, ДИВНОЕ, Кекс с изюмом, Мадлены ассорти},
   yticklabel style={font=\small},
-  xmin=0, xmax=30,
+  xmin=0, xmax=32, ymax=5.9,
+  clip=false,
   xmajorgrids=true,
   grid style={dashed,gray!40},
   axis y line=left,
   axis x line=bottom,
   nodes near coords,
   nodes near coords align={horizontal},
-  every node near coord/.append style={font=\small},
+  every node near coord/.append style={font=\scriptsize, anchor=west},
 ]
 \addplot[fill=red!55, draw=red!70!black] coordinates {
   (5.2,1) (14.6,2) (20.53,3) (22.96,4) (24.95,5)
 };
 \draw[dashed, orange!80!black, very thick]
-  (axis cs:12,0.4) -- (axis cs:12,5.55)
+  (axis cs:12,0.4) -- (axis cs:12,5.75)
   node[above, font=\scriptsize, orange!80!black]{норма~12\%};
 \end{axis}
 \end{tikzpicture}
 \caption{Доля возвратов по SKU, \%. Пунктир --- верхняя граница нормы для хлебобулочной продукции}
 \label{fig:return_rates_chart}
 \end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/monthly_returns.png}
+\caption{Возвраты по месяцам и доля возврата от продаж, июнь 2025 --- июнь 2026}
+\label{fig:monthly_returns}
+\end{figure}
+
+Помесячная динамика на рисунке~\ref{fig:monthly_returns} (расчёт --- \texttt{Аудит/monthly\_dynamics.ipynb}) показывает, что повышенная доля возврата --- не разовый всплеск в отдельном месяце, а устойчивый паттерн на протяжении почти всего периода наблюдений, что дополнительно подтверждает целесообразность регулярного прогнозирования возвратов, а не точечного разбора отдельных месяцев.
 
 Мадлены ассорти и Кекс с изюмом демонстрируют патологически высокую долю возвратов (почти четверть отгруженного товара) --- нетипично даже для скоропортящейся продукции (средняя норма: 5--12\%). Вероятные причины: короткий срок годности при низкой оборачиваемости на полке «Светофора», завышенные объёмы поставки, проблемы с выкладкой.
 
@@ -280,6 +301,15 @@ moving\_average\_7 & 0.812 & 0.743 & --- \\
 CatBoost выигрывает у всех бейзлайнов: CV WAPE 0.709 против 0.798 у метода Кростона, разработанного специально для прерывистых рядов. Примечательно, что recent WAPE (0.668) лучше CV WAPE (0.709) --- улучшение качества на свежих данных является позитивным сигналом для производственного применения.
 
 \section{Двухступенчатая hurdle-модель прогноза денежного потока}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{img/monthly_cashflow.png}
+\caption{Денежный поток по месяцам: притоки, оттоки и чистый поток, июнь 2025 --- июнь 2026}
+\label{fig:monthly_cashflow}
+\end{figure}
+
+Рисунок~\ref{fig:monthly_cashflow} (расчёт --- \texttt{Аудит/monthly\_dynamics.ipynb}) визуализирует именно ту нерегулярность притоков и оттоков, на которую ниже опирается выбор hurdle-модели: чистый денежный поток колеблется от месяца к месяцу, периодически уходя в отрицательную зону, что подтверждает диагноз «кассовые разрывы» из главы~\ref{ch:dds} и обосновывает необходимость помесячного, а не разового прогноза.
 
 Входящие и исходящие платежи имеют выраженную прерывистость: на большинстве дней нет ни одного крупного поступления или платежа определённого типа. Для таких распределений классические регрессионные модели систематически завышают прогноз~\cite{lambert1992zero}. Применяется \textbf{двухступенчатая (hurdle) модель}, разделяющая вероятность события и его интенсивность~\cite{lambert1992zero}:
 

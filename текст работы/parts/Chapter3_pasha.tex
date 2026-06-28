@@ -169,14 +169,15 @@
     Аренда и ЖКХ,
     Закупки},
   yticklabel style={font=\small},
-  xmin=0, xmax=33,
+  xmin=0, xmax=36,
+  clip=false,
   xmajorgrids=true,
   grid style={dashed,gray!40},
   axis y line=left,
   axis x line=bottom,
   nodes near coords,
   nodes near coords align={horizontal},
-  every node near coord/.append style={font=\scriptsize},
+  every node near coord/.append style={font=\scriptsize, anchor=west},
 ]
 \addplot[fill=blue!55, draw=blue!70!black] coordinates {
   (0.035,1) (0.144,2) (0.099,3) (0.784,4)

@@ -8,6 +8,9 @@
 
 \addbibresource{references.bib}
 
+% Комбинирующий акут (U+0301), используемый в словах типа "временны́х"
+\DeclareUnicodeCharacter{0301}{\'{}}
+
 \begin{document}
 
 \courseworktitlepage
@@ -23,14 +26,13 @@
 \input{parts/introduction}
 \input{parts/Chapter0}
 \input{parts/chapter1}
-\input{parts/chapter2}
+% \input{parts/chapter2}
 \input{parts/Chapter3_pasha}
 \input{parts/Chapter4_pasha}
 \input{parts/Chapter5_pasha}
 \input{parts/Chapter5}
 \input{parts/conclusion}
 
-\nocite{*}
 \printbibliography
 
 \appendix
