@@ -74,7 +74,7 @@ lag\_1 & $-0.012$ & $-0.012$ & 0.055 \\
   ytick=data,
   yticklabels={lag\_1, lag\_2, праздники, week\_of\_year, roll\_mean\_4, share\_svetofor},
   yticklabel style={font=\small},
-  xmin=-0.06, xmax=0.30,
+  xmin=-0.08, xmax=0.30, ymin=0.3, ymax=6.7,
   clip=false,
   xmajorgrids=true,
   grid style={dashed,gray!40},
@@ -82,7 +82,9 @@ lag\_1 & $-0.012$ & $-0.012$ & 0.055 \\
   axis x line=bottom,
   nodes near coords,
   nodes near coords align={horizontal},
-  every node near coord/.append style={font=\scriptsize, anchor=west},
+  every node near coord/.append style={
+    /pgf/number format/.cd, fixed, precision=3,
+    /tikz/.cd, font=\scriptsize},
 ]
 \addplot[fill=blue!55, draw=blue!70!black] coordinates {
   (-0.012,1) (0.051,2) (0.094,3) (0.143,4) (0.187,5) (0.235,6)
@@ -119,11 +121,11 @@ lag\_1 & $-0.012$ & $-0.012$ & 0.055 \\
     \fill[orange!65, draw=orange!80] (\trainW,\y) rectangle (\trainW+\testW,\y+\H);
     \node[right] at (\trainW+\testW+0.15, \y+\H/2) {Фолд \i};
   }
-  \node[blue!70, below] at (4, -0.25) {Обучение (расширяется)};
-  \node[orange!80!black, below] at (9.3, -0.25) {Тест ($h = 3$ мес.)};
   \pgfmathsetmacro{\axisTopY}{5*(\H+\gap)+0.1}
   \draw[-Stealth, thick] (-0.2,0) -- (-0.2, \axisTopY) node[above]{};
-  \draw[-Stealth, thick] (0,-0.6) -- (12.5,-0.6) node[right]{Время};
+  \draw[-Stealth, thick] (0,-1.1) -- (12.5,-1.1) node[right]{Время};
+  \node[blue!70, below] at (4, -0.35) {Обучение (расширяется)};
+  \node[orange!80!black, below] at (9.3, -0.35) {Тест ($h = 3$ мес.)};
 \end{tikzpicture}
 \caption{Схема rolling-origin cross-validation (расширяющееся обучающее окно, фиксированный тестовый горизонт)}
 \label{fig:rolling_origin}
@@ -247,7 +249,7 @@ ElasticNet & 0.741 & 0.043 & Хуже бейзлайна \\
   ytick=data,
   yticklabels={Песочное печенье, Ажурная коса, ДИВНОЕ, Кекс с изюмом, Мадлены ассорти},
   yticklabel style={font=\small},
-  xmin=0, xmax=32, ymax=5.9,
+  xmin=0, xmax=32, ymin=0.3, ymax=5.9,
   clip=false,
   xmajorgrids=true,
   grid style={dashed,gray!40},
